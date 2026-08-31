@@ -4,3 +4,8 @@ node_modules/
 *.png
 *.npz
 .venv/
+dataset/
+train_style_lora.py
+batch_caption.py
+cmd.txt
+dataset_config.toml
