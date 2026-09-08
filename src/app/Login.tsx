@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../firebase/config' // 만약 firebase/config 경로가 다르다면 상대 경로를 맞춰주세요!
+import { auth } from './firebase/config'
 
 export default function Login() {
   const [email, setEmail] = useState('')
