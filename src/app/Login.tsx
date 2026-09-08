@@ -1,24 +1,35 @@
 import React, { useState } from 'react'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from './firebase/config'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false) // 로그인 / 회원가입 모드 전환 상태
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
 
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      if (isSignUp) {
+        // 회원가입 실행
+        await createUserWithEmailAndPassword(auth, email, password)
+      } else {
+        // 로그인 실행
+        await signInWithEmailAndPassword(auth, email, password)
+      }
     } catch (err: any) {
       console.error(err)
-      setError('로그인 실패: 이메일 또는 비밀번호를 확인하세요.')
+      if (isSignUp) {
+        setError('회원가입 실패: 이메일 형식이나 비밀번호 조건(6자 이상)을 확인하세요.')
+      } else {
+        setError('로그인 실패: 이메일 또는 비밀번호를 확인하세요.')
+      }
     } finally {
       setLoading(false)
     }
@@ -54,9 +65,9 @@ export default function Login() {
         }}
       />
 
-      {/* 로그인 폼 박스 */}
+      {/* 로그인 / 회원가입 폼 박스 */}
       <form
-        onSubmit={handleLogin}
+        onSubmit={handleSubmit}
         style={{
           position: 'relative',
           width: 340,
@@ -81,7 +92,7 @@ export default function Login() {
               color: '#09090b',
             }}
           >
-            로그인
+            {isSignUp ? '회원가입' : '로그인'}
           </div>
         </div>
 
@@ -105,7 +116,7 @@ export default function Login() {
         {/* 이메일 입력창 */}
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
-            아이디
+            아이디 (이메일)
           </label>
           <input
             type="email"
@@ -133,9 +144,9 @@ export default function Login() {
         </div>
 
         {/* 비밀번호 입력창 */}
-        <div style={{ marginBottom: 26 }}>
+        <div style={{ marginBottom: 22 }}>
           <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
-            비밀번호
+            비밀번호 {isSignUp && <span style={{ fontSize: 9, color: '#64748b' }}>(6자 이상)</span>}
           </label>
           <input
             type="password"
@@ -180,10 +191,33 @@ export default function Login() {
             letterSpacing: '0.1em',
             boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
             transition: 'all 0.2s ease',
+            marginBottom: 16,
           }}
         >
-          {loading ? '로그인 중...' : '로그인'}
+          {loading ? '처리 중...' : isSignUp ? '회원가입 완료' : '로그인'}
         </button>
+
+        {/* 로그인 <-> 회원가입 전환 버튼 */}
+        <div style={{ textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setError('')
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#059669',
+              fontSize: 11,
+              fontFamily: 'monospace',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+            }}
+          >
+            {isSignUp ? '이미 계정이 있으신가요? 로그인' : '계정이 없으신가요? 회원가입'}
+          </button>
+        </div>
       </form>
     </div>
   )
