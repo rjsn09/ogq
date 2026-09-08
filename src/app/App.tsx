@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./firebase/config";
-import Login from "./components/Login";
+import Login from "./Login";
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
