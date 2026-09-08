@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "../firebase/config"; // firebase 설정 경로에 맞춰 확인해주세요
+import { auth } from "./firebase/config";
 import Login from "./components/Login";
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
