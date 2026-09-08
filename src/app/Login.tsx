@@ -32,14 +32,14 @@ export default function Login() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#000000',
-        color: '#f0f0f0',
+        background: '#ffffff',
+        color: '#18181b',
         position: 'relative',
         overflow: 'hidden',
         userSelect: 'none',
       }}
     >
-      {/* 상단 핀 조명 스포트라이트 */}
+      {/* 상단 부드러운 에메랄드 빛 조명 효과 */}
       <div
         style={{
           position: 'absolute',
@@ -48,7 +48,7 @@ export default function Login() {
           transform: 'translateX(-50%)',
           width: 320,
           height: '100%',
-          background: 'linear-gradient(180deg, rgba(16, 185, 129, 0.25) 0%, rgba(16, 185, 129, 0.02) 80%, transparent 100%)',
+          background: 'linear-gradient(180deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.01) 80%, transparent 100%)',
           clipPath: 'polygon(30% 0%, 70% 0%, 100% 100%, 0% 100%)',
           pointerEvents: 'none',
         }}
@@ -61,11 +61,10 @@ export default function Login() {
           position: 'relative',
           width: 340,
           padding: '40px 32px',
-          background: 'rgba(10, 10, 12, 0.95)',
-          border: '1px solid rgba(39, 39, 42, 0.8)',
+          background: '#ffffff',
+          border: '1px solid #e4e4e7',
           borderRadius: 12,
-          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.95), 0 0 40px rgba(16, 185, 129, 0.08)',
-          backdropFilter: 'blur(16px)',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.06), 0 0 20px rgba(16, 185, 129, 0.05)',
           display: 'flex',
           flexDirection: 'column',
           zIndex: 2,
@@ -74,13 +73,12 @@ export default function Login() {
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div
             style={{
-              fontSize: 38,
+              fontSize: 34,
               fontWeight: 900,
-              letterSpacing: '0.15em',
+              letterSpacing: '0.1em',
               fontFamily: 'Inter, sans-serif',
               whiteSpace: 'nowrap',
-              color: '#FFFFFF',
-              textShadow: '0 0 20px rgba(255, 255, 255, 0.2)',
+              color: '#09090b',
             }}
           >
             로그인
@@ -91,10 +89,10 @@ export default function Login() {
           <div
             style={{
               fontSize: 11,
-              color: '#f87171',
+              color: '#dc2626',
               padding: '10px 12px',
-              background: 'rgba(239, 68, 68, 0.08)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'rgba(239, 68, 68, 0.06)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
               borderRadius: 6,
               marginBottom: 18,
               fontFamily: 'monospace',
@@ -106,7 +104,7 @@ export default function Login() {
 
         {/* 이메일 입력창 */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 10, color: '#10B981', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em' }}>
+          <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
             아이디
           </label>
           <input
@@ -120,10 +118,10 @@ export default function Login() {
             style={{
               width: '100%',
               padding: '12px 14px',
-              background: '#000000',
-              border: `1px solid ${focusedInput === 'email' ? '#10B981' : '#27272a'}`,
-              boxShadow: focusedInput === 'email' ? '0 0 15px rgba(16, 185, 129, 0.3)' : 'none',
-              color: '#ffffff',
+              background: '#f8fafc',
+              border: `1px solid ${focusedInput === 'email' ? '#10B981' : '#cbd5e1'}`,
+              boxShadow: focusedInput === 'email' ? '0 0 0 3px rgba(16, 185, 129, 0.15)' : 'none',
+              color: '#0f172a',
               borderRadius: 6,
               boxSizing: 'border-box',
               fontSize: 12,
@@ -136,7 +134,7 @@ export default function Login() {
 
         {/* 비밀번호 입력창 */}
         <div style={{ marginBottom: 26 }}>
-          <label style={{ display: 'block', fontSize: 10, color: '#10B981', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em' }}>
+          <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
             비밀번호
           </label>
           <input
@@ -150,10 +148,10 @@ export default function Login() {
             style={{
               width: '100%',
               padding: '12px 14px',
-              background: '#000000',
-              border: `1px solid ${focusedInput === 'password' ? '#10B981' : '#27272a'}`,
-              boxShadow: focusedInput === 'password' ? '0 0 15px rgba(16, 185, 129, 0.3)' : 'none',
-              color: '#ffffff',
+              background: '#f8fafc',
+              border: `1px solid ${focusedInput === 'password' ? '#10B981' : '#cbd5e1'}`,
+              boxShadow: focusedInput === 'password' ? '0 0 0 3px rgba(16, 185, 129, 0.15)' : 'none',
+              color: '#0f172a',
               borderRadius: 6,
               boxSizing: 'border-box',
               fontSize: 12,
@@ -173,14 +171,14 @@ export default function Login() {
             padding: '13px 0',
             background: loading ? '#059669' : 'linear-gradient(135deg, #34d399 0%, #10B981 100%)',
             border: 'none',
-            color: '#000000',
+            color: '#ffffff',
             fontWeight: 800,
             borderRadius: 6,
             cursor: loading ? 'not-allowed' : 'pointer',
             fontSize: 12,
             fontFamily: 'monospace',
             letterSpacing: '0.1em',
-            boxShadow: '0 0 20px rgba(16, 185, 129, 0.4)',
+            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
             transition: 'all 0.2s ease',
           }}
         >
