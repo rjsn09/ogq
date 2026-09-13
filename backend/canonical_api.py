@@ -10,16 +10,11 @@ import traceback
 import uuid
 from typing import Any, Callable, Optional
 
-import torch
 from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
 
-from canonical_controlnet import (
-    ControlNetStickerEngine,
-    PromptPlanner,
-    render_pose_image,
-)
+from canonical_dreamo import DreamOStickerEngine, PromptPlanner
 
 
 class CanonicalApiService:
@@ -36,7 +31,10 @@ class CanonicalApiService:
         self.variant_prompt_map = variant_prompt_map
         self.default_order = default_order
 
-        self.router = APIRouter(prefix="/api/canonical", tags=["canonical"])
+        self.router = APIRouter(
+            prefix="/api/canonical",
+            tags=["canonical"],
+        )
 
         self.canonicals: dict[str, dict[str, Any]] = {}
         self.jobs: dict[str, dict[str, Any]] = {}
@@ -45,21 +43,27 @@ class CanonicalApiService:
         self.jobs_lock = threading.Lock()
 
         self.prompt_planner: Optional[PromptPlanner] = None
-        self.control_engine: Optional[ControlNetStickerEngine] = None
-        self.control_engine_generator_id: Optional[int] = None
+        self.sticker_engine: Optional[DreamOStickerEngine] = None
+        self.engine_generator_id: Optional[int] = None
 
         self._register_routes()
 
     @staticmethod
     def _pil_to_dataurl(image: Image.Image) -> str:
         buf = io.BytesIO()
-        image.save(buf, format="PNG", optimize=True, compress_level=9)
-        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+        image.save(
+            buf,
+            format="PNG",
+            optimize=True,
+            compress_level=9,
+        )
+        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+        return "data:image/png;base64," + encoded
 
     def _generator(self) -> Any:
         generator = self.get_generator()
         if generator is None:
-            raise RuntimeError("EmojiGenerator is not initialized")
+            raise RuntimeError("EmojiGenerator is not initialized yet.")
         return generator
 
     def _planner(self) -> PromptPlanner:
@@ -67,24 +71,37 @@ class CanonicalApiService:
             self.prompt_planner = PromptPlanner()
         return self.prompt_planner
 
-    def _engine(self) -> ControlNetStickerEngine:
+    def _engine(self) -> DreamOStickerEngine:
         generator = self._generator()
-        generator_id = id(generator)
+        gid = id(generator)
+        if (
+            self.sticker_engine is None
+            or self.engine_generator_id != gid
+        ):
+            self.sticker_engine = DreamOStickerEngine(generator)
+            self.engine_generator_id = gid
+        return self.sticker_engine
 
-        if self.control_engine is None or self.control_engine_generator_id != generator_id:
-            self.control_engine = ControlNetStickerEngine(generator)
-            self.control_engine_generator_id = generator_id
-        return self.control_engine
-
-    def _select_variant(self, theme_name: str, seed: int) -> str:
-        value = self.variant_prompt_map.get(theme_name, theme_name)
+    def _select_variant(
+        self,
+        theme_name: str,
+        seed: int,
+    ) -> str:
+        value = self.variant_prompt_map.get(
+            theme_name,
+            theme_name,
+        )
         if isinstance(value, list):
             if not value:
                 return theme_name
             return random.Random(seed).choice(value)
         return str(value)
 
-    def _parse_targets(self, indices: str, variant_names: str) -> list[tuple[int, str]]:
+    def _parse_targets(
+        self,
+        indices: str,
+        variant_names: str,
+    ) -> list[tuple[int, str]]:
         try:
             raw_indices = json.loads(indices) if indices else []
             if not isinstance(raw_indices, list):
@@ -93,7 +110,11 @@ class CanonicalApiService:
             raw_indices = []
 
         try:
-            raw_names = json.loads(variant_names) if variant_names else {}
+            raw_names = (
+                json.loads(variant_names)
+                if variant_names
+                else {}
+            )
             if not isinstance(raw_names, dict):
                 raw_names = {}
         except (json.JSONDecodeError, TypeError):
@@ -107,7 +128,11 @@ class CanonicalApiService:
                 pass
 
         if not raw_indices:
-            return [(index, name) for index, name in enumerate(self.default_order, start=1)]
+            return [
+                (index, name)
+                for index, name
+                in enumerate(self.default_order, start=1)
+            ]
 
         result: list[tuple[int, str]] = []
         for raw_index in raw_indices:
@@ -124,15 +149,10 @@ class CanonicalApiService:
             else:
                 fallback = f"이모티콘 {index}"
 
-            result.append((index, name_map.get(index, fallback)))
+            result.append(
+                (index, name_map.get(index, fallback))
+            )
         return result
-
-    def _enable_stage1_conditioning(self, generator: Any, ip_scale: float) -> None:
-        generator._set_ip_scale(ip_scale)
-        try:
-            generator.txt2img.enable_lora()
-        except Exception:
-            pass
 
     def _generate_canonical_image(
         self,
@@ -144,30 +164,13 @@ class CanonicalApiService:
         num_inference_steps: int,
         seed: int,
     ) -> Image.Image:
-        self._enable_stage1_conditioning(generator, ip_scale)
-
-        prompt_embeds, pooled_prompt_embeds, negative_prompt_embeds, negative_pooled_prompt_embeds = generator._embed_prompt(prompt)
-
-        kwargs: dict[str, Any] = {
-            "prompt_embeds": prompt_embeds,
-            "pooled_prompt_embeds": pooled_prompt_embeds,
-            "negative_prompt_embeds": negative_prompt_embeds,
-            "negative_pooled_prompt_embeds": negative_pooled_prompt_embeds,
-            "num_inference_steps": int(num_inference_steps),
-            "guidance_scale": 7.0,
-            "width": 1024,
-            "height": 1024,
-            "generator": generator._seeded_generator(seed),
-        }
-
-        if ref_image is not None:
-            kwargs["ip_adapter_image"] = generator._prepare_reference(ref_image)
-
-        with torch.inference_mode():
-            image = generator.txt2img(**kwargs).images[0]
-
-        generator._cleanup_memory()
-        return image
+        # ip_scale is retained for frontend compatibility.
+        return generator.generate_prompt_with_reference(
+            prompt=f"{generator.base_positive}. {prompt}",
+            ref_image=ref_image,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+        )
 
     def _run_canonical_job(
         self,
@@ -185,37 +188,76 @@ class CanonicalApiService:
                 generator = self._generator()
                 planner = self._planner()
 
-                auto_caption = (generator.caption_image(ref_image) if ref_image is not None else "")
+                if ref_image is not None:
+                    original_analysis = generator.analyze_reference_image(
+                        ref_image,
+                        user_hint=original_user_text,
+                    )
+                    original_caption = str(
+                        original_analysis.get("text", "")
+                    ).strip()
+                    framing_hint = str(
+                        original_analysis.get("framing", "upper_body")
+                    ).strip()
+                else:
+                    original_analysis = {
+                        "framing": "upper_body",
+                        "visible_body_parts": [],
+                        "profile": {},
+                        "text": "",
+                    }
+                    original_caption = ""
+                    framing_hint = "upper_body"
 
-                original_profile = generator.build_character_profile(auto_caption, original_user_text)
+                original_profile = generator.build_character_profile(
+                    original_caption,
+                    original_user_text,
+                )
 
                 if not original_profile:
-                    raise ValueError("Reference image or character description is None.")
+                    raise ValueError(
+                        "Reference image or character description is required."
+                    )
 
                 user_request = original_user_text.strip()
                 if edit_request.strip():
-                    user_request += "\nCanonical correction requested by user: " + edit_request.strip()
+                    user_request += (
+                        "\nCanonical correction requested by user: "
+                        + edit_request.strip()
+                    )
 
                 character_prompt = planner.build_canonical_prompt(
                     character_profile=original_profile,
                     user_request=user_request,
-                    emoji_style="",
+                    emoji_style=generator.base_positive,
+                    framing_hint=framing_hint,
                 )
 
-                canonical_prompt = f"{generator.base_positive}, {character_prompt}"
-                seed = (int(uuid.UUID(canonical_id)) + generation_number * 100003) % (2**31 - 1)
+                seed = (
+                    int(uuid.UUID(canonical_id))
+                    + generation_number * 100003
+                ) % (2**31 - 1)
 
                 canonical_image = self._generate_canonical_image(
                     generator=generator,
-                    prompt=canonical_prompt,
+                    prompt=character_prompt,
                     ref_image=ref_image,
                     ip_scale=ip_scale,
                     num_inference_steps=steps,
                     seed=seed,
                 )
+                canonical_analysis = generator.analyze_reference_image(
+                    canonical_image,
+                    user_hint=original_user_text,
+                )
+                canonical_caption = str(
+                    canonical_analysis.get("text", "")
+                ).strip()
 
-                canonical_caption = generator.caption_image(canonical_image, threshold=0.28, max_tags=28)
-                canonical_profile = generator.build_character_profile(canonical_caption, original_user_text)
+                canonical_profile = generator.build_character_profile(
+                    canonical_caption,
+                    original_user_text,
+                )
 
                 with self.canonicals_lock:
                     item = self.canonicals[canonical_id]
@@ -226,9 +268,14 @@ class CanonicalApiService:
                             "original_image": ref_image,
                             "original_profile": original_profile,
                             "canonical_profile": canonical_profile,
-                            "canonical_prompt": canonical_prompt,
+                            "original_analysis": original_analysis,
+                            "canonical_analysis": canonical_analysis,
+                            "framing": framing_hint,
+                            "canonical_prompt": character_prompt,
                             "canonical_image_pil": canonical_image,
-                            "canonical_image": self._pil_to_dataurl(canonical_image),
+                            "canonical_image": self._pil_to_dataurl(
+                                canonical_image
+                            ),
                             "error": None,
                             "updated_at": time.time(),
                         }
@@ -270,16 +317,31 @@ class CanonicalApiService:
                     canonical_image: Image.Image = (
                         canonical["canonical_image_pil"].copy()
                     )
-                    canonical_profile = canonical["canonical_profile"]
-                    original_profile = canonical["original_profile"]
+                    canonical_profile = canonical[
+                        "canonical_profile"
+                    ]
+                    original_profile = canonical[
+                        "original_profile"
+                    ]
+                    framing_hint = str(
+                        canonical.get("framing", "upper_body")
+                    )
 
-                base_feature = generator.image_feature(canonical_image)
-                base_seed = int(uuid.UUID(job_id)) % (2**31 - 1)
+                base_feature = generator.image_feature(
+                    canonical_image
+                )
+                base_seed = (
+                    int(uuid.UUID(job_id))
+                    % (2**31 - 1)
+                )
 
                 completed = 0
 
                 for index, theme_name in targets:
-                    detailed_variant = self._select_variant(theme_name, base_seed + index * 7919)
+                    detailed_variant = self._select_variant(
+                        theme_name,
+                        base_seed + index * 7919,
+                    )
 
                     plan = planner.build_sticker_plan(
                         canonical_profile=canonical_profile,
@@ -287,14 +349,12 @@ class CanonicalApiService:
                         theme_name=theme_name,
                         detailed_variant=detailed_variant,
                         emoji_style=generator.base_positive,
+                        framing_hint=framing_hint,
                     )
-
-                    pose_image = render_pose_image(plan.keypoints)
 
                     candidates = engine.generate_candidates(
                         canonical_image=canonical_image,
                         final_prompt=plan.prompt,
-                        pose_image=pose_image,
                         num_inference_steps=steps,
                         strength=img2img_strength,
                         controlnet_scale=controlnet_scale,
@@ -302,7 +362,13 @@ class CanonicalApiService:
                         seed_base=base_seed + index * 100,
                     )
 
-                    prompt_feature = generator.text_feature(plan.prompt)
+                    clip_prompt = generator.sanitize_clip_prompt(
+                        plan.clip_prompt,
+                        max_content_tokens=75,
+                    )
+                    prompt_feature = generator.text_feature(
+                        clip_prompt
+                    )
 
                     best_image, best_score, score_details = (
                         generator.pick_best_candidate(
@@ -313,7 +379,9 @@ class CanonicalApiService:
                         )
                     )
 
-                    output = generator.to_ogq_sticker(best_image)
+                    output = generator.to_ogq_sticker(
+                        best_image
+                    )
 
                     completed += 1
                     with self.jobs_lock:
@@ -322,14 +390,22 @@ class CanonicalApiService:
                             {
                                 "index": index,
                                 "name": theme_name,
-                                "image": self._pil_to_dataurl(output),
-                                "score": round(best_score, 4),
+                                "image": self._pil_to_dataurl(
+                                    output
+                                ),
+                                "score": round(
+                                    best_score,
+                                    4,
+                                ),
                                 "score_detail": {
                                     key: round(value, 4)
-                                    for key, value in score_details.items()
+                                    for key, value
+                                    in score_details.items()
                                 },
                                 "final_prompt": plan.prompt,
-                                "pose_keypoints": plan.keypoints,
+                                "clip_prompt": clip_prompt,
+                                "framing": framing_hint,
+                                "pose_keypoints": None,
                             }
                         )
                         job["completed"] = completed
@@ -363,17 +439,37 @@ class CanonicalApiService:
                 raw = await image.read()
                 if raw:
                     try:
-                        ref_image = Image.open(io.BytesIO(raw)).convert("RGBA")
+                        ref_image = Image.open(
+                            io.BytesIO(raw)
+                        ).convert("RGBA")
                     except Exception as exc:
-                        return JSONResponse(status_code=400, content={"error": f"Invalid image: {exc}"})
+                        return JSONResponse(
+                            status_code=400,
+                            content={
+                                "error": f"Invalid image: {exc}"
+                            },
+                        )
 
             if ref_image is None and not character_base:
-                return JSONResponse(status_code=400, content={"error": "Reference image or character description is required."})
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": (
+                            "Reference image or character "
+                            "description is required."
+                        )
+                    },
+                )
 
             canonical_id = str(uuid.uuid4())
-
-            ip_scale = max(0.0, min(1.2, float(ip_scale)))
-            steps = max(20, min(50, int(num_inference_steps)))
+            ip_scale = max(
+                0.0,
+                min(1.2, float(ip_scale)),
+            )
+            steps = max(
+                8,
+                min(50, int(num_inference_steps)),
+            )
 
             with self.canonicals_lock:
                 self.canonicals[canonical_id] = {
@@ -401,7 +497,6 @@ class CanonicalApiService:
                 steps=steps,
                 generation_number=0,
             )
-
             return {"canonical_id": canonical_id}
 
         @self.router.get("/{canonical_id}")
@@ -409,14 +504,22 @@ class CanonicalApiService:
             with self.canonicals_lock:
                 item = self.canonicals.get(canonical_id)
                 if item is None:
-                    return JSONResponse(status_code=404, content={"error": "canonical not found"})
+                    return JSONResponse(
+                        status_code=404,
+                        content={
+                            "error": "canonical not found"
+                        },
+                    )
 
                 return {
                     "canonical_id": canonical_id,
                     "status": item["status"],
                     "approved": item["approved"],
                     "image": item.get("canonical_image"),
-                    "canonical_prompt": item.get("canonical_prompt"),
+                    "canonical_prompt": item.get(
+                        "canonical_prompt"
+                    ),
+                    "framing": item.get("framing"),
                     "error": item.get("error"),
                 }
 
@@ -425,10 +528,20 @@ class CanonicalApiService:
             with self.canonicals_lock:
                 item = self.canonicals.get(canonical_id)
                 if item is None:
-                    return JSONResponse(status_code=404, content={"error": "canonical not found"})
+                    return JSONResponse(
+                        status_code=404,
+                        content={
+                            "error": "canonical not found"
+                        },
+                    )
 
                 if item["status"] != "ready":
-                    return JSONResponse(status_code=409, content={"error": "Canonical is not ready."})
+                    return JSONResponse(
+                        status_code=409,
+                        content={
+                            "error": "Canonical is not ready."
+                        },
+                    )
 
                 item["approved"] = True
                 item["status"] = "approved"
@@ -448,9 +561,16 @@ class CanonicalApiService:
             with self.canonicals_lock:
                 item = self.canonicals.get(canonical_id)
                 if item is None:
-                    return JSONResponse(status_code=404, content={"error": "canonical not found"})
+                    return JSONResponse(
+                        status_code=404,
+                        content={
+                            "error": "canonical not found"
+                        },
+                    )
 
-                generation_number = int(item["generation_number"]) + 1
+                generation_number = (
+                    int(item["generation_number"]) + 1
+                )
                 item["generation_number"] = generation_number
                 item["status"] = "generating"
                 item["approved"] = False
@@ -459,7 +579,9 @@ class CanonicalApiService:
                 item["error"] = None
 
                 ref_image = item["original_image"]
-                original_user_text = item["original_user_text"]
+                original_user_text = item[
+                    "original_user_text"
+                ]
                 ip_scale = item["ip_scale"]
                 steps = item["steps"]
 
@@ -485,7 +607,7 @@ class CanonicalApiService:
             background_tasks: BackgroundTasks,
             indices: str = Form(""),
             variant_names: str = Form(""),
-            candidate_count: int = Form(2),
+            candidate_count: int = Form(1),
             img2img_strength: float = Form(0.55),
             controlnet_scale: float = Form(0.90),
             num_inference_steps: int = Form(30),
@@ -493,20 +615,52 @@ class CanonicalApiService:
             with self.canonicals_lock:
                 canonical = self.canonicals.get(canonical_id)
                 if canonical is None:
-                    return JSONResponse(status_code=404, content={"error": "canonical not found"})
+                    return JSONResponse(
+                        status_code=404,
+                        content={
+                            "error": "canonical not found"
+                        },
+                    )
                 if not canonical.get("approved"):
-                    return JSONResponse(status_code=409, content={"error": "Approve the canonical first."})
+                    return JSONResponse(
+                        status_code=409,
+                        content={
+                            "error": (
+                                "Approve the canonical first."
+                            )
+                        },
+                    )
 
-            targets = self._parse_targets(indices, variant_names)
+            targets = self._parse_targets(
+                indices,
+                variant_names,
+            )
             if not targets:
-                return JSONResponse(status_code=400, content={"error": "No valid generation slots."})
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "No valid generation slots."
+                    },
+                )
 
-            candidate_count = max(1, min(4, int(candidate_count)))
-            img2img_strength = max(0.40, min(0.70, float(img2img_strength)))
-            controlnet_scale = max(0.30, min(1.50, float(controlnet_scale)))
-            steps = max(20, min(50, int(num_inference_steps)))
+            candidate_count = max(
+                1,
+                min(4, int(candidate_count)),
+            )
+            img2img_strength = max(
+                0.0,
+                min(1.0, float(img2img_strength)),
+            )
+            controlnet_scale = max(
+                0.0,
+                min(1.5, float(controlnet_scale)),
+            )
+            steps = max(
+                8,
+                min(50, int(num_inference_steps)),
+            )
+
             job_id = str(uuid.uuid4())
-
             with self.jobs_lock:
                 self.jobs[job_id] = {
                     "status": "running",
@@ -529,18 +683,29 @@ class CanonicalApiService:
                 controlnet_scale=controlnet_scale,
                 steps=steps,
             )
-
             return {"job_id": job_id}
 
-        @self.router.get("/generate-set/{job_id}/status")
-        def get_generate_set(job_id: str, since: int = 0):
+        @self.router.get(
+            "/generate-set/{job_id}/status"
+        )
+        def get_generate_set(
+            job_id: str,
+            since: int = 0,
+        ):
             with self.jobs_lock:
                 job = self.jobs.get(job_id)
                 if job is None:
-                    return JSONResponse(status_code=404, content={"error": "job not found"})
+                    return JSONResponse(
+                        status_code=404,
+                        content={"error": "job not found"},
+                    )
 
                 images = job["images"]
-                new_images = images[since:] if 0 <= since < len(images) else []
+                new_images = (
+                    images[since:]
+                    if 0 <= since < len(images)
+                    else []
+                )
 
                 return {
                     "status": job["status"],
@@ -565,6 +730,5 @@ def install_canonical_api(
         variant_prompt_map=variant_prompt_map,
         default_order=default_order,
     )
-    
     app.include_router(service.router)
     return service

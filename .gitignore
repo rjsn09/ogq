@@ -3,7 +3,10 @@ node_modules/
 *.env
 *.png
 *.npz
-.venv/
+*.pyc
+.venv*
+*.pth
+vendor
 dataset/
 train_style_lora.py
 batch_caption.py

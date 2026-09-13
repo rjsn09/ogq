@@ -1,2 +1,0 @@
-cd C:\Users\seedg\Desktop\ogq\emojeGenerator\backend\sd-scripts
-.\train.bat

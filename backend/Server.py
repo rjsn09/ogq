@@ -263,13 +263,21 @@ def _run_job_inner(
                 candidate_count=candidate_count,
                 seed_base=base_seed + (idx * 100),
             )
-
-            best_img, best_score, score_details = generator.pick_best_candidate(
-                candidates=candidates,
-                base_feature=base_feature,
-                variant_feature=variant_feature,
-                ref_feature=ref_feature,
-            )
+            if len(candidates) == 1:
+                best_img = candidates[0]
+                best_score = -1
+                score_details = {
+                    "reference": -1,
+                    "base": -1,
+                    "prompt": -1,
+                }
+            else:
+                best_img, best_score, score_details = generator.pick_best_candidate(
+                    candidates=candidates,
+                    base_feature=base_feature,
+                    variant_feature=variant_feature,
+                    ref_feature=ref_feature,
+                )
 
             out_img = generator.to_ogq_sticker(best_img)
 

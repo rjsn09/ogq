@@ -59,16 +59,15 @@ class PromptPlanner:
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is None ")
 
-        base_url = os.getenv("LLM_BASE_URL", "").strip()
-        kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url: kwargs["base_url"] = base_url
-
-        self.client = OpenAI(**kwargs)
+        self.client = OpenAI(api_key=api_key, base_url="https://api.openai.com/v1")
         self.model = os.getenv("PROMPT_LLM_MODEL", "gpt-5.6-luna").strip()
 
     @staticmethod
     def _parse_json(text: str) -> dict[str, Any]:
         text = text.strip()
+        print("========================================================================")
+        print(text)
+        print("========================================================================")
         try:
             return json.loads(text)
         except json.JSONDecodeError:
@@ -323,10 +322,12 @@ class ControlNetStickerEngine:
         self.controlnet = ControlNetModel.from_pretrained(
             controlnet_model,
             torch_dtype=torch.float16,
-            use_safetensors=True,
         )
 
-        self.pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pipe(self.g.img2img, controlnet=self.controlnet)
+        self.pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pipe(
+            self.g.img2img,
+            controlnet=self.controlnet,
+        )
 
         self.pipe.scheduler = DPMSolverMultistepScheduler.from_config(
             self.pipe.scheduler.config,
