@@ -1,5 +1,7 @@
-import React from "react";
-import { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "./firebase/config";
+import Login from "./Login";
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
@@ -17,7 +19,7 @@ import {
   Variant,
 } from "./utils/imageGenerator";
 
-function Header() {
+function Header({ userEmail }: { userEmail?: string | null }) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-40">
       <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
@@ -42,7 +44,13 @@ function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {userEmail && (
+            <span className="text-xs text-muted-foreground font-mono hidden md:inline">
+              {userEmail}
+            </span>
+          )}
+
           <span
             className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs"
             style={{ fontWeight: 600 }}
@@ -50,15 +58,13 @@ function Header() {
             Beta
           </span>
 
-          <a
-            href="https://ogqmarket.naver.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-xs"
+          <button
+            onClick={() => signOut(auth)}
+            className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
             style={{ fontWeight: 500 }}
           >
-            OGQ 마켓 바로가기 →
-          </a>
+            로그아웃
+          </button>
         </div>
       </div>
     </header>
@@ -105,6 +111,18 @@ type PendingGeneration = {
 };
 
 export default function App() {
+  // 인증 상태 관리
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -137,8 +155,6 @@ export default function App() {
   const [canonicalError, setCanonicalError] = useState<string | null>(null);
   const [canonicalBusy, setCanonicalBusy] = useState(false);
 
-  // The generation request that should automatically continue
-  // after the user approves the canonical.
   const pendingGenerationRef = useRef<PendingGeneration | null>(null);
 
   const invalidateCanonical = useCallback(() => {
@@ -150,13 +166,10 @@ export default function App() {
     pendingGenerationRef.current = null;
   }, []);
 
-  // If the user's character description changes, the old canonical should
-  // no longer be considered approved.
   useEffect(() => {
     invalidateCanonical();
   }, [description, invalidateCanonical]);
 
-  // Poll canonical generation while the confirmation panel is open.
   useEffect(() => {
     if (
       !canonicalId ||
@@ -214,10 +227,6 @@ export default function App() {
     []
   );
 
-  // ------------------------------------------------------------------
-  // Actual Stage-2 generation
-  // ------------------------------------------------------------------
-
   const runStickerGeneration = useCallback(
     async (
       approvedId: string,
@@ -255,10 +264,6 @@ export default function App() {
     [generatedImages]
   );
 
-  // ------------------------------------------------------------------
-  // Generate button
-  // ------------------------------------------------------------------
-
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
       if (!uploadedImage || !title.trim()) return;
@@ -285,17 +290,14 @@ export default function App() {
         isPartial,
       };
 
-      // Already approved -> go straight to Stage 2.
       if (approvedCanonicalId) {
         await runStickerGeneration(approvedCanonicalId, request);
         return;
       }
 
-      // Store this request so approval can continue it automatically.
       pendingGenerationRef.current = request;
       setCanonicalPanelOpen(true);
 
-      // A canonical is already ready but the user closed the panel earlier.
       if (canonicalId && canonicalStatus === "ready") {
         return;
       }
@@ -334,10 +336,6 @@ export default function App() {
       runStickerGeneration,
     ]
   );
-
-  // ------------------------------------------------------------------
-  // Confirmation panel buttons
-  // ------------------------------------------------------------------
 
   const handleApproveCanonical = useCallback(async () => {
     if (!canonicalId || canonicalStatus !== "ready") return;
@@ -401,12 +399,26 @@ export default function App() {
     pendingGenerationRef.current = null;
   }, [canonicalBusy, canonicalStatus]);
 
+  // 인증 상태 확인 중일 때 로딩 화면 표시
+  if (authLoading) {
+    return (
+      <div style={{ height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000', color: '#10B981', fontFamily: 'monospace' }}>
+        시스템 로딩 중...
+      </div>
+    );
+  }
+
+  // 로그인하지 않은 경우 Login 컴포넌트 렌더링
+  if (!user) {
+    return <Login />;
+  }
+
   const isReady = !!uploadedImage && !!title.trim();
   const uiBusy = isGenerating || canonicalBusy || (canonicalPanelOpen && canonicalStatus === "generating");
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <Header userEmail={user?.email} />
 
       {/* Step indicators */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5">
@@ -453,7 +465,6 @@ export default function App() {
             setUploadedImage={(value) => {
               setUploadedImage(value);
 
-              // New source image = old canonical is no longer valid.
               invalidateCanonical();
 
               if (!value) {
@@ -500,3 +511,4 @@ export default function App() {
     </div>
   );
 }
+
