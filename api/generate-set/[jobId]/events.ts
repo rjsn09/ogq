@@ -7,7 +7,7 @@ import {
   jobIdParam,
   proxyOGQ,
   querySuffix,
-} from "../../../server/ogqProxy";
+} from "../../../server/ogqProxy.js";
 
 
 export default async function handler(

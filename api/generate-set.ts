@@ -5,7 +5,7 @@ import type {
 
 import {
   proxyOGQ,
-} from "../server/ogqProxy";
+} from "../server/ogqProxy.js";
 
 
 export const config = {

@@ -6,7 +6,7 @@ import type {
 import {
   proxyOGQ,
   querySuffix,
-} from "../../server/ogqProxy";
+} from "../../server/ogqProxy.js";
 
 
 export const config = {
