@@ -78,11 +78,7 @@ export async function createCanonical(
 
   const formData = new FormData();
 
-  formData.append(
-    "image",
-    refBlob,
-    "ref.png"
-  );
+  formData.append("image", refBlob, "ref.png");
 
   if (characterBase?.trim()) {
     formData.append(
@@ -91,15 +87,10 @@ export async function createCanonical(
     );
   }
 
-  formData.append(
-    "ip_scale",
-    "0.60"
-  );
+  formData.append("ip_scale", "0.60");
+  formData.append("num_inference_steps", "30");
 
-  formData.append(
-    "num_inference_steps",
-    "30"
-  );
+  formData.append("transport", "job");
 
   const res = await fetch(
     "/api/canonical",

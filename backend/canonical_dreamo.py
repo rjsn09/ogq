@@ -37,14 +37,39 @@ class PromptPlanner:
         self.model = os.getenv("PROMPT_LLM_MODEL", "").strip()
         if self.mode == "llm":
             from openai import OpenAI
-            api_key = os.getenv("OPENAI_API_KEY", "").strip()
-            if not api_key or not self.model:
-                raise RuntimeError("LLM mode requires OPENAI_API_KEY and PROMPT_LLM_MODEL.")
-            kwargs = {"api_key": api_key, "timeout": 45.0, "max_retries": 1}
-            base_url = os.getenv("LLM_BASE_URL", "").strip()
-            if base_url:
-                kwargs["base_url"] = base_url
-            self.client = OpenAI(**kwargs)
+
+            base_url = os.getenv(
+                "LLM_BASE_URL",
+                "https://api.openai.com/v1"
+            ).strip()
+
+            if "api.groq.com" in base_url:
+                api_key = os.getenv(
+                    "GROQ_API_KEY",
+                    ""
+                ).strip()
+            else:
+                api_key = os.getenv(
+                    "OPENAI_API_KEY",
+                    ""
+                ).strip()
+
+            if not api_key:
+                raise RuntimeError(
+                    "LLM API key is missing."
+                )
+
+            if not self.model:
+                raise RuntimeError(
+                    "PROMPT_LLM_MODEL is missing."
+                )
+
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=45.0,
+                max_retries=1
+            )
 
     @staticmethod
     def _normalize_framing(value: str) -> str:

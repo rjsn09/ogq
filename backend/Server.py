@@ -108,7 +108,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 canonical_api_service = install_canonical_api(app=app, get_generator=lambda: generator, generation_lock=generation_lock, variant_prompt_map=VARIANT_PROMPT_MAP, default_order=DEFAULT_ORDER)
+def print_routes(router, depth=0):
+    indent = "  " * depth
 
+    for route in getattr(router, "routes", []):
+        print(
+            f"{indent}TYPE: {type(route).__name__}",
+            f"PATH: {getattr(route, 'path', None)}",
+            f"METHODS: {getattr(route, 'methods', None)}",
+            f"DEPENDENCIES: {getattr(route, 'dependencies', None)}",
+            flush=True
+        )
+
+        if hasattr(route, "routes"):
+            print_routes(route, depth + 1)
+
+
+print_routes(app)
 
 def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, candidate_count, steps):
     service = canonical_api_service
@@ -186,6 +202,11 @@ def health():
     with service.jobs_lock:
         active = sum(j["status"] not in {"done", "error"} for j in service.jobs.values())
     return {"status": "ok" if generator else "loading", "device": generator.device if generator else "loading", "active_jobs": active}
+
+@app.get("/health-test")
+async def health_test():
+    print("HEALTH TEST HIT", flush=True)
+    return {"ok": True}
 
 
 if __name__ == "__main__":
