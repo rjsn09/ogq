@@ -1,107 +1,13 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { proxyOGQ, querySuffix } from '../../server/ogqProxy';
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+export const config = { api: { bodyParser: false } };
 
-function backendBase() {
-  const value =
-    process.env.BACKEND_URL ||
-    process.env.VITE_BACKEND_URL ||
-    "";
-
-  if (!value) {
-    throw new Error("BACKEND_URL is not configured.");
-  }
-
-  return value.replace(/\/+$/, "");
-}
-
-async function readBody(req: VercelRequest): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-
-  for await (const chunk of req) {
-    chunks.push(
-      Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
-    );
-  }
-
-  return Buffer.concat(chunks);
-}
-
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse,
-) {
-  try {
-    const rawPath = req.query.path;
-    const path = Array.isArray(rawPath)
-      ? rawPath.join("/")
-      : rawPath || "";
-
-    const query = new URLSearchParams();
-
-    for (const [key, value] of Object.entries(req.query)) {
-      if (key === "path") continue;
-
-      if (Array.isArray(value)) {
-        value.forEach((item) => query.append(key, item));
-      } else if (value != null) {
-        query.append(key, String(value));
-      }
-    }
-
-    const suffix = query.toString()
-      ? `?${query.toString()}`
-      : "";
-
-    const url = `${backendBase()}/api/canonical${
-      path ? `/${path}` : ""
-    }${suffix}`;
-
-    const headers: Record<string, string> = {};
-
-    if (req.headers["content-type"]) {
-      headers["content-type"] = req.headers["content-type"];
-    }
-
-    if (req.headers.accept) {
-      headers.accept = req.headers.accept;
-    }
-
-    const method = req.method || "GET";
-    const hasBody = !["GET", "HEAD"].includes(method);
-
-    const upstream = await fetch(url, {
-      method,
-      headers,
-      body: hasBody ? await readBody(req) : undefined,
-    });
-
-    res.status(upstream.status);
-
-    upstream.headers.forEach((value, key) => {
-      if (
-        ![
-          "content-encoding",
-          "transfer-encoding",
-          "content-length",
-        ].includes(key.toLowerCase())
-      ) {
-        res.setHeader(key, value);
-      }
-    });
-
-    const data = Buffer.from(await upstream.arrayBuffer());
-    res.send(data);
-  } catch (error) {
-    res.status(500).json({
-      error:
-        error instanceof Error
-          ? error.message
-          : "Canonical proxy failed.",
-    });
-  }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!['GET', 'POST'].includes(req.method ?? 'GET')) { res.setHeader('Allow', 'GET, POST'); res.status(405).json({ error: 'Method not allowed' }); return; }
+  const raw = req.query.path;
+  const parts = Array.isArray(raw) ? raw : raw ? raw.split('/') : [];
+  if (parts.some(part => !/^[a-zA-Z0-9_-]+$/.test(part))) { res.status(400).json({ error: '잘못된 canonical 경로입니다.' }); return; }
+  const path = parts.map(encodeURIComponent).join('/');
+  await proxyOGQ(req, res, `/api/canonical${path ? `/${path}` : ''}${querySuffix(req, ['path'])}`);
 }

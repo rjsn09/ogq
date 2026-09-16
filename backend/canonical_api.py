@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import json
 import random
 import threading
@@ -10,11 +11,12 @@ import traceback
 import uuid
 from typing import Any, Callable, Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from PIL import Image
 
 from canonical_dreamo import DreamOStickerEngine, PromptPlanner
+from sse_stream import generation_queue, job_snapshot, stream_response
 
 
 class CanonicalApiService:
@@ -54,8 +56,8 @@ class CanonicalApiService:
         image.save(
             buf,
             format="PNG",
-            optimize=True,
-            compress_level=9,
+            optimize=False,
+            compress_level=3,
         )
         encoded = base64.b64encode(buf.getvalue()).decode("ascii")
         return "data:image/png;base64," + encoded
@@ -105,9 +107,9 @@ class CanonicalApiService:
         try:
             raw_indices = json.loads(indices) if indices else []
             if not isinstance(raw_indices, list):
-                raw_indices = []
+                raise HTTPException(400, "indices must be a JSON array.")
         except (json.JSONDecodeError, TypeError):
-            raw_indices = []
+            raise HTTPException(400, "indices must be a JSON array.")
 
         try:
             raw_names = (
@@ -116,9 +118,9 @@ class CanonicalApiService:
                 else {}
             )
             if not isinstance(raw_names, dict):
-                raw_names = {}
+                raise HTTPException(400, "variant_names must be a JSON object.")
         except (json.JSONDecodeError, TypeError):
-            raw_names = {}
+            raise HTTPException(400, "variant_names must be a JSON object.")
 
         name_map: dict[int, str] = {}
         for key, value in raw_names.items():
@@ -129,7 +131,7 @@ class CanonicalApiService:
 
         if not raw_indices:
             return [
-                (index, name)
+                (index, name_map.get(index, name))
                 for index, name
                 in enumerate(self.default_order, start=1)
             ]
@@ -166,7 +168,7 @@ class CanonicalApiService:
     ) -> Image.Image:
         # ip_scale is retained for frontend compatibility.
         return generator.generate_prompt_with_reference(
-            prompt=f"{generator.base_positive}. {prompt}",
+            prompt=prompt,
             ref_image=ref_image,
             num_inference_steps=num_inference_steps,
             seed=seed,
@@ -209,6 +211,10 @@ class CanonicalApiService:
                     original_caption = ""
                     framing_hint = "upper_body"
 
+                configured_frame = os.getenv("OGQ_FRAMING", "upper_body")
+                if configured_frame in {"upper_body", "full_body"}:
+                    # Never invent hidden lower-body clothing from an upper-body source.
+                    framing_hint = "full_body" if configured_frame == "full_body" and framing_hint == "full_body" else "upper_body"
                 original_profile = generator.build_character_profile(
                     original_caption,
                     original_user_text,
@@ -246,18 +252,13 @@ class CanonicalApiService:
                     num_inference_steps=steps,
                     seed=seed,
                 )
-                canonical_analysis = generator.analyze_reference_image(
-                    canonical_image,
-                    user_hint=original_user_text,
-                )
-                canonical_caption = str(
-                    canonical_analysis.get("text", "")
-                ).strip()
-
-                canonical_profile = generator.build_character_profile(
-                    canonical_caption,
-                    original_user_text,
-                )
+                # The original identity stays authoritative; do not turn generation
+                # mistakes into new identity facts through a second vision call.
+                canonical_analysis = None
+                canonical_profile = original_profile
+                if edit_request.strip():
+                    canonical_profile += ". User-approved correction: " + edit_request.strip()
+                encoded_image = self._pil_to_dataurl(canonical_image)
 
                 with self.canonicals_lock:
                     item = self.canonicals[canonical_id]
@@ -273,9 +274,7 @@ class CanonicalApiService:
                             "framing": framing_hint,
                             "canonical_prompt": character_prompt,
                             "canonical_image_pil": canonical_image,
-                            "canonical_image": self._pil_to_dataurl(
-                                canonical_image
-                            ),
+                            "canonical_image": encoded_image,
                             "error": None,
                             "updated_at": time.time(),
                         }
@@ -327,9 +326,7 @@ class CanonicalApiService:
                         canonical.get("framing", "upper_body")
                     )
 
-                base_feature = generator.image_feature(
-                    canonical_image
-                )
+                base_feature = generator.image_feature(canonical_image) if candidate_count > 1 else None
                 base_seed = (
                     int(uuid.UUID(job_id))
                     % (2**31 - 1)
@@ -338,6 +335,7 @@ class CanonicalApiService:
                 completed = 0
 
                 for index, theme_name in targets:
+                    image_started = time.perf_counter()
                     detailed_variant = self._select_variant(
                         theme_name,
                         base_seed + index * 7919,
@@ -362,27 +360,19 @@ class CanonicalApiService:
                         seed_base=base_seed + index * 100,
                     )
 
-                    clip_prompt = generator.sanitize_clip_prompt(
-                        plan.clip_prompt,
-                        max_content_tokens=75,
-                    )
-                    prompt_feature = generator.text_feature(
-                        clip_prompt
-                    )
-
-                    best_image, best_score, score_details = (
-                        generator.pick_best_candidate(
-                            candidates=candidates,
-                            base_feature=base_feature,
-                            variant_feature=prompt_feature,
-                            ref_feature=None,
-                        )
-                    )
+                    clip_prompt = plan.clip_prompt
+                    if len(candidates) == 1:
+                        best_image, best_score, score_details = candidates[0], None, {}
+                    else:
+                        clip_prompt = generator.sanitize_clip_prompt(plan.clip_prompt, max_content_tokens=75)
+                        prompt_feature = generator.text_feature(clip_prompt)
+                        best_image, best_score, score_details = generator.pick_best_candidate(candidates=candidates, base_feature=base_feature, variant_feature=prompt_feature, ref_feature=None)
 
                     output = generator.to_ogq_sticker(
                         best_image
                     )
 
+                    encoded_image = self._pil_to_dataurl(output)
                     completed += 1
                     with self.jobs_lock:
                         job = self.jobs[job_id]
@@ -390,13 +380,9 @@ class CanonicalApiService:
                             {
                                 "index": index,
                                 "name": theme_name,
-                                "image": self._pil_to_dataurl(
-                                    output
-                                ),
-                                "score": round(
-                                    best_score,
-                                    4,
-                                ),
+                                "image": encoded_image,
+                                "elapsed_seconds": round(time.perf_counter() - image_started, 3),
+                                "score": round(best_score, 4) if best_score is not None else None,
                                 "score_detail": {
                                     key: round(value, 4)
                                     for key, value
@@ -423,297 +409,149 @@ class CanonicalApiService:
                     job["error"] = str(exc)
                     job["finished_at"] = time.time()
 
+    def cleanup(self):
+        now = time.time()
+        with self.jobs_lock:
+            active = {j["canonical_id"] for j in self.jobs.values() if j["status"] not in {"done", "error"}}
+            for jid in list(self.jobs):
+                job = self.jobs[jid]
+                if job.get("finished_at") and now - job["finished_at"] > 3600:
+                    del self.jobs[jid]
+        with self.canonicals_lock:
+            for cid in list(self.canonicals):
+                item = self.canonicals[cid]
+                if cid not in active and item["status"] != "generating" and now - item["updated_at"] > 86400:
+                    del self.canonicals[cid]
+
+    def _canonical_snapshot(self, canonical_id):
+        with self.canonicals_lock:
+            item = self.canonicals.get(canonical_id)
+            if item is None:
+                return None
+            ready = item["status"] in {"ready", "approved"}
+            images = [{"index": 1, "name": "canonical", "image": item["canonical_image"], "framing": item.get("framing"), "canonical_prompt": item.get("canonical_prompt")}] if ready else []
+            return {"status": "done" if ready else item["status"], "images": images, "total": 1, "error": item.get("error")}
+
     def _register_routes(self) -> None:
         @self.router.post("")
-        async def create_canonical(
-            background_tasks: BackgroundTasks,
-            image: Optional[UploadFile] = File(None),
-            character_base: str = Form(""),
-            ip_scale: float = Form(0.60),
-            num_inference_steps: int = Form(30),
-        ):
-            character_base = character_base.strip()
-
-            ref_image: Optional[Image.Image] = None
+        async def create_canonical(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.60), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^(sse|job)$")):
+            self.cleanup()
+            ref_image = None
             if image is not None:
                 raw = await image.read()
                 if raw:
                     try:
-                        ref_image = Image.open(
-                            io.BytesIO(raw)
-                        ).convert("RGBA")
-                    except Exception as exc:
-                        return JSONResponse(
-                            status_code=400,
-                            content={
-                                "error": f"Invalid image: {exc}"
-                            },
-                        )
-
-            if ref_image is None and not character_base:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": (
-                            "Reference image or character "
-                            "description is required."
-                        )
-                    },
-                )
-
+                        with Image.open(io.BytesIO(raw)) as source:
+                            ref_image = source.convert("RGBA")
+                    except Exception:
+                        raise HTTPException(400, "Invalid reference image.")
+            if ref_image is None and not character_base.strip():
+                raise HTTPException(400, "Reference image or character description is required.")
+            self._generator()
             canonical_id = str(uuid.uuid4())
-            ip_scale = max(
-                0.0,
-                min(1.2, float(ip_scale)),
-            )
-            steps = max(
-                8,
-                min(50, int(num_inference_steps)),
-            )
-
             with self.canonicals_lock:
                 self.canonicals[canonical_id] = {
-                    "status": "generating",
-                    "approved": False,
-                    "original_image": ref_image,
-                    "original_user_text": character_base,
-                    "ip_scale": ip_scale,
-                    "steps": steps,
-                    "generation_number": 0,
-                    "canonical_image": None,
-                    "canonical_image_pil": None,
-                    "error": None,
-                    "created_at": time.time(),
-                    "updated_at": time.time(),
+                    "status": "generating", "approved": False, "original_image": ref_image,
+                    "original_user_text": character_base.strip(), "ip_scale": ip_scale,
+                    "steps": num_inference_steps, "generation_number": 0,
+                    "canonical_image": None, "canonical_image_pil": None, "error": None,
+                    "created_at": time.time(), "updated_at": time.time(),
                 }
+            try:
+                generation_queue.submit(self._run_canonical_job, canonical_id=canonical_id, ref_image=ref_image, original_user_text=character_base.strip(), edit_request="", ip_scale=ip_scale, steps=num_inference_steps, generation_number=0)
+            except Exception:
+                with self.canonicals_lock:
+                    self.canonicals.pop(canonical_id, None)
+                raise
+            events_url = f"/api/canonical/{canonical_id}/events"
+            if transport == "job":
+                return {"canonical_id": canonical_id, "events_url": events_url}
+            return stream_response(request, lambda: self._canonical_snapshot(canonical_id), {"canonical_id": canonical_id, "events_url": events_url})
 
-            background_tasks.add_task(
-                self._run_canonical_job,
-                canonical_id=canonical_id,
-                ref_image=ref_image,
-                original_user_text=character_base,
-                edit_request="",
-                ip_scale=ip_scale,
-                steps=steps,
-                generation_number=0,
-            )
-            return {"canonical_id": canonical_id}
+        @self.router.get("/{canonical_id}/events")
+        async def canonical_events(canonical_id: str, request: Request, after: int = 0):
+            return stream_response(request, lambda: self._canonical_snapshot(canonical_id), {"canonical_id": canonical_id}, after)
 
         @self.router.get("/{canonical_id}")
         def get_canonical(canonical_id: str):
             with self.canonicals_lock:
                 item = self.canonicals.get(canonical_id)
                 if item is None:
-                    return JSONResponse(
-                        status_code=404,
-                        content={
-                            "error": "canonical not found"
-                        },
-                    )
-
-                return {
-                    "canonical_id": canonical_id,
-                    "status": item["status"],
-                    "approved": item["approved"],
-                    "image": item.get("canonical_image"),
-                    "canonical_prompt": item.get(
-                        "canonical_prompt"
-                    ),
-                    "framing": item.get("framing"),
-                    "error": item.get("error"),
-                }
+                    raise HTTPException(404, "Canonical not found.")
+                return {"canonical_id": canonical_id, "status": item["status"], "approved": item["approved"], "image": item.get("canonical_image"), "canonical_prompt": item.get("canonical_prompt"), "framing": item.get("framing"), "error": item.get("error")}
 
         @self.router.post("/{canonical_id}/approve")
         def approve_canonical(canonical_id: str):
             with self.canonicals_lock:
                 item = self.canonicals.get(canonical_id)
                 if item is None:
-                    return JSONResponse(
-                        status_code=404,
-                        content={
-                            "error": "canonical not found"
-                        },
-                    )
-
-                if item["status"] != "ready":
-                    return JSONResponse(
-                        status_code=409,
-                        content={
-                            "error": "Canonical is not ready."
-                        },
-                    )
-
-                item["approved"] = True
-                item["status"] = "approved"
-                item["updated_at"] = time.time()
-
-            return {
-                "canonical_id": canonical_id,
-                "approved": True,
-            }
+                    raise HTTPException(404, "Canonical not found.")
+                if item["status"] not in {"ready", "approved"}:
+                    raise HTTPException(409, "Canonical is not ready.")
+                item.update(approved=True, status="approved", updated_at=time.time())
+            return {"canonical_id": canonical_id, "approved": True}
 
         @self.router.post("/{canonical_id}/regenerate")
-        def regenerate_canonical(
-            canonical_id: str,
-            background_tasks: BackgroundTasks,
-            edit_request: str = Form(""),
-        ):
+        async def regenerate_canonical(canonical_id: str, request: Request, edit_request: str = Form(""), transport: str = Form("sse", pattern="^(sse|job)$")):
+            with self.jobs_lock:
+                if any(j["canonical_id"] == canonical_id and j["status"] not in {"done", "error"} for j in self.jobs.values()):
+                    raise HTTPException(409, "Wait until the current sticker set finishes.")
             with self.canonicals_lock:
                 item = self.canonicals.get(canonical_id)
                 if item is None:
-                    return JSONResponse(
-                        status_code=404,
-                        content={
-                            "error": "canonical not found"
-                        },
-                    )
-
-                generation_number = (
-                    int(item["generation_number"]) + 1
-                )
-                item["generation_number"] = generation_number
-                item["status"] = "generating"
-                item["approved"] = False
-                item["canonical_image"] = None
-                item["canonical_image_pil"] = None
-                item["error"] = None
-
-                ref_image = item["original_image"]
-                original_user_text = item[
-                    "original_user_text"
-                ]
-                ip_scale = item["ip_scale"]
-                steps = item["steps"]
-
-            background_tasks.add_task(
-                self._run_canonical_job,
-                canonical_id=canonical_id,
-                ref_image=ref_image,
-                original_user_text=original_user_text,
-                edit_request=edit_request,
-                ip_scale=ip_scale,
-                steps=steps,
-                generation_number=generation_number,
-            )
-
-            return {
-                "canonical_id": canonical_id,
-                "status": "generating",
-            }
+                    raise HTTPException(404, "Canonical not found.")
+                if item["status"] == "generating":
+                    raise HTTPException(409, "Canonical generation is already running.")
+                old_item = dict(item)
+                item.update(generation_number=item["generation_number"] + 1, status="generating", approved=False, canonical_image=None, canonical_image_pil=None, error=None, updated_at=time.time())
+            try:
+                generation_queue.submit(self._run_canonical_job, canonical_id=canonical_id, ref_image=item["original_image"], original_user_text=item["original_user_text"], edit_request=edit_request, ip_scale=item["ip_scale"], steps=item["steps"], generation_number=item["generation_number"])
+            except Exception:
+                with self.canonicals_lock:
+                    self.canonicals[canonical_id] = old_item
+                raise
+            events_url = f"/api/canonical/{canonical_id}/events"
+            if transport == "job":
+                return {"canonical_id": canonical_id, "events_url": events_url}
+            return stream_response(request, lambda: self._canonical_snapshot(canonical_id), {"canonical_id": canonical_id, "events_url": events_url})
 
         @self.router.post("/{canonical_id}/generate-set")
-        def generate_set(
-            canonical_id: str,
-            background_tasks: BackgroundTasks,
-            indices: str = Form(""),
-            variant_names: str = Form(""),
-            candidate_count: int = Form(1),
-            img2img_strength: float = Form(0.55),
-            controlnet_scale: float = Form(0.90),
-            num_inference_steps: int = Form(30),
-        ):
+        async def generate_set(canonical_id: str, request: Request, indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), controlnet_scale: float = Form(0.90), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^(sse|job)$")):
+            self.cleanup()
             with self.canonicals_lock:
                 canonical = self.canonicals.get(canonical_id)
                 if canonical is None:
-                    return JSONResponse(
-                        status_code=404,
-                        content={
-                            "error": "canonical not found"
-                        },
-                    )
+                    raise HTTPException(404, "Canonical not found.")
                 if not canonical.get("approved"):
-                    return JSONResponse(
-                        status_code=409,
-                        content={
-                            "error": (
-                                "Approve the canonical first."
-                            )
-                        },
-                    )
-
-            targets = self._parse_targets(
-                indices,
-                variant_names,
-            )
-            if not targets:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": "No valid generation slots."
-                    },
-                )
-
-            candidate_count = max(
-                1,
-                min(4, int(candidate_count)),
-            )
-            img2img_strength = max(
-                0.0,
-                min(1.0, float(img2img_strength)),
-            )
-            controlnet_scale = max(
-                0.0,
-                min(1.5, float(controlnet_scale)),
-            )
-            steps = max(
-                8,
-                min(50, int(num_inference_steps)),
-            )
-
+                    raise HTTPException(409, "Approve the canonical first.")
+                canonical["updated_at"] = time.time()
+            targets = self._parse_targets(indices, variant_names)
+            if not targets or len(targets) > 24 or len({i for i, _ in targets}) != len(targets):
+                raise HTTPException(400, "Choose 1 to 24 unique generation slots.")
             job_id = str(uuid.uuid4())
             with self.jobs_lock:
-                self.jobs[job_id] = {
-                    "status": "running",
-                    "completed": 0,
-                    "total": len(targets),
-                    "images": [],
-                    "error": None,
-                    "created_at": time.time(),
-                    "finished_at": None,
-                    "canonical_id": canonical_id,
-                }
+                self.jobs[job_id] = {"status": "running", "completed": 0, "total": len(targets), "images": [], "error": None, "created_at": time.time(), "finished_at": None, "canonical_id": canonical_id}
+            try:
+                generation_queue.submit(self._run_sticker_job, job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=img2img_strength, controlnet_scale=controlnet_scale, steps=num_inference_steps)
+            except Exception:
+                with self.jobs_lock:
+                    self.jobs.pop(job_id, None)
+                raise
+            events_url = f"/api/canonical/generate-set/{job_id}/events"
+            if transport == "job":
+                return {"job_id": job_id, "events_url": events_url}
+            return stream_response(request, lambda: job_snapshot(self.jobs, self.jobs_lock, job_id), {"job_id": job_id, "canonical_id": canonical_id, "events_url": events_url})
 
-            background_tasks.add_task(
-                self._run_sticker_job,
-                job_id=job_id,
-                canonical_id=canonical_id,
-                targets=targets,
-                candidate_count=candidate_count,
-                img2img_strength=img2img_strength,
-                controlnet_scale=controlnet_scale,
-                steps=steps,
-            )
-            return {"job_id": job_id}
+        @self.router.get("/generate-set/{job_id}/events")
+        async def set_events(job_id: str, request: Request, after: int = 0):
+            return stream_response(request, lambda: job_snapshot(self.jobs, self.jobs_lock, job_id), {"job_id": job_id}, after)
 
-        @self.router.get(
-            "/generate-set/{job_id}/status"
-        )
-        def get_generate_set(
-            job_id: str,
-            since: int = 0,
-        ):
-            with self.jobs_lock:
-                job = self.jobs.get(job_id)
-                if job is None:
-                    return JSONResponse(
-                        status_code=404,
-                        content={"error": "job not found"},
-                    )
-
-                images = job["images"]
-                new_images = (
-                    images[since:]
-                    if 0 <= since < len(images)
-                    else []
-                )
-
-                return {
-                    "status": job["status"],
-                    "completed": job["completed"],
-                    "total": job["total"],
-                    "images": new_images,
-                    "error": job.get("error"),
-                }
+        @self.router.get("/generate-set/{job_id}/status")
+        def get_generate_set(job_id: str, since: int = 0):
+            state = job_snapshot(self.jobs, self.jobs_lock, job_id)
+            if state is None:
+                raise HTTPException(404, "Job not found.")
+            return {**state, "completed": len(state["images"]), "images": state["images"][max(0, since):]}
 
 
 def install_canonical_api(

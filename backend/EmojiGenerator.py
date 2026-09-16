@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import gc
+import hashlib
+from collections import OrderedDict
 import io
 import json
 import logging
@@ -16,7 +18,6 @@ import torch.nn.functional as F
 from PIL import Image
 from groq import Groq
 from rembg import new_session, remove
-from transformers import CLIPModel, CLIPProcessor
 
 logger = logging.getLogger("ogq")
 
@@ -54,7 +55,7 @@ class EmojiGenerator:
             "GROQ_VISION_MODEL",
             "qwen/qwen3.6-27b",
         ).strip()
-        self.groq_client = Groq(api_key=groq_api_key)
+        self.groq_client = Groq(api_key=groq_api_key, timeout=60.0, max_retries=1)
         self.groq_vision_max_side = max(
             512,
             int(os.getenv("GROQ_VISION_MAX_SIDE", "2048")),
@@ -84,7 +85,7 @@ class EmojiGenerator:
         version = os.getenv("DREAMO_VERSION", "v1.1").strip()
         self.dreamo_memory_mode = os.getenv(
             "DREAMO_MEMORY_MODE",
-            "gpu",
+            "low_vram",
         ).strip().lower()
 
         if self.dreamo_memory_mode not in {"gpu", "low_vram"}:
@@ -98,8 +99,23 @@ class EmojiGenerator:
             "1", "true", "True", "yes", "YES"
         }
 
-        # Small speed-oriented CUDA settings. These do not change model weights
-        # or generation quality.
+        self.no_turbo = no_turbo
+        self._reference_cache = OrderedDict()
+        self._analysis_cache = OrderedDict()
+        self.style_mode = os.getenv("OGQ_STYLE_REFERENCE_MODE", "canonical").strip().lower()
+        if self.style_mode not in {"canonical", "always", "off"}:
+            raise ValueError("OGQ_STYLE_REFERENCE_MODE must be canonical, always or off.")
+        style_path = Path(os.getenv("OGQ_STYLE_REFERENCE", "styles/reference.png"))
+        if not style_path.is_absolute():
+            style_path = Path(__file__).resolve().parent / style_path
+        self.style_image = None
+        if self.style_mode != "off":
+            if not style_path.is_file():
+                raise FileNotFoundError(f"Style reference not found: {style_path}")
+            with Image.open(style_path) as im:
+                self.style_image = im.convert("RGB")
+
+        # CUDA throughput settings; model weights remain unchanged.
         torch.backends.cuda.matmul.allow_tf32 = True
         if hasattr(torch.backends, "cudnn"):
             torch.backends.cudnn.allow_tf32 = True
@@ -154,8 +170,10 @@ class EmojiGenerator:
             "OGQ_STYLE_PROMPT",
             (
                 "high-quality 2D Korean messenger emoji sticker, "
-                "cute chibi character, oversized expressive head, compact but readable chibi body, "
-                "clean dark outlines, simple flat colors, minimal cel shading, "
+                "soft hand-drawn super-deformed chibi, very large rounded head, short tiny torso, "
+                "rounded mitten hands, bold warm dark-brown outlines, simple rounded face, "
+                "large simple oval eyes, tiny mouth, soft pink cheek blush, "
+                "muted flat colors, at most one soft cel-shadow tone, no glossy rendering, "
                 "clean readable silhouette, single character, centered composition, "
                 "pure white background"
             ),
@@ -176,20 +194,10 @@ class EmojiGenerator:
         if self.scorer_device == "cuda" and not torch.cuda.is_available():
             self.scorer_device = "cpu"
 
-        self.clip_processor = CLIPProcessor.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        )
-        self.clip_model = CLIPModel.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        )
-        self.clip_model.to(self.scorer_device)
-        self.clip_model.eval()
-        self.clip_model.requires_grad_(False)
-
-        self.rembg_session = new_session(
-            "isnet-anime",
-            providers=["CPUExecutionProvider"],
-        )
+        # Load these only when actually needed (no CLIP at all for one candidate).
+        self.clip_processor = None
+        self.clip_model = None
+        self.rembg_session = None
 
         if model_id:
             logger.info(
@@ -489,7 +497,13 @@ Return JSON only, exactly with these keys:
         user_hint: str = "",
     ) -> dict:
         """Return framing + persistent character appearance from Groq Vision."""
-        return self._profile_request(image, user_hint=user_hint)
+        key = (self._image_key(self._on_white(image)), user_hint)
+        if key not in self._analysis_cache:
+            self._analysis_cache[key] = self._profile_request(image, user_hint=user_hint)
+            while len(self._analysis_cache) > 8:
+                self._analysis_cache.popitem(last=False)
+        self._analysis_cache.move_to_end(key)
+        return self._analysis_cache[key]
 
     def caption_image(
         self,
@@ -497,7 +511,7 @@ Return JSON only, exactly with these keys:
         threshold: float = 0.35,
         max_tags: int = 20,
     ) -> str:
-        payload = self._profile_request(image)
+        payload = self.analyze_reference_image(image)
         text = str(payload.get("text", "")).strip()
         if not text:
             profile = payload.get("profile")
@@ -548,61 +562,81 @@ Return JSON only, exactly with these keys:
             )
         return ". ".join(parts)
 
-    def _resolved_steps(self, requested: int) -> int:
-        # DreamO turbo is designed around ~12 steps.
-        configured = os.getenv("DREAMO_STEPS", "12").strip()
-        try:
-            return max(8, min(30, int(configured)))
-        except ValueError:
-            return 12
+    def _ensure_scorer(self):
+        if self.clip_model is None:
+            from transformers import CLIPModel, CLIPProcessor
+            self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.scorer_device).eval()
+            self.clip_model.requires_grad_(False)
 
-    def _dreamo_generate(
-        self,
-        *,
-        prompt: str,
-        reference_images: list[Image.Image],
-        reference_tasks: list[str],
-        seed: int,
-        requested_steps: int,
-        width: int = 1024,
-        height: int = 1024,
-    ) -> Image.Image:
-        ref_res = int(os.getenv("DREAMO_REF_RES", "640"))
+    def _resolved_steps(self, requested: int) -> int:
+        # 0 uses the configured default; explicit request parameters now work.
+        default = 25 if self.no_turbo else 12
+        value = int(requested) if requested and requested > 0 else int(os.getenv("DREAMO_STEPS", str(default)))
+        return max(8, min(50, value))
+
+    @staticmethod
+    def _image_key(image: Image.Image) -> str:
+        rgb = image.convert("RGB")
+        return hashlib.sha256(str(rgb.size).encode() + rgb.tobytes()).hexdigest()
+
+    def _prepare_references(self, images, tasks, ref_res):
+        key = (ref_res, tuple(tasks), tuple(self._image_key(self._on_white(im)) for im in images))
+        if key not in self._reference_cache:
+            arrays = [np.asarray(self._on_white(im), dtype=np.uint8) for im in images]
+            conditions, _, _ = self.dreamo.pre_condition(ref_images=arrays, ref_tasks=tasks, ref_res=ref_res, seed="0")
+            # Preprocessed image tensors stay on CPU; do not cache GPU latents.
+            self._reference_cache[key] = [{**c, "img": c["img"].detach().cpu()} for c in conditions]
+            while len(self._reference_cache) > 2:
+                self._reference_cache.popitem(last=False)
+        self._reference_cache.move_to_end(key)
+        # Pipeline versions may mutate condition dictionaries/tensors.
+        return [{**c, "img": c["img"].clone()} for c in self._reference_cache[key]]
+
+    @torch.inference_mode()
+    def _dreamo_generate(self, *, prompt: str, reference_images: list[Image.Image], reference_tasks: list[str], seed: int, requested_steps: int, width: int | None = None, height: int | None = None, use_style: bool = False) -> Image.Image:
+        refs, tasks = list(reference_images), list(reference_tasks)
+        if use_style and self.style_image is not None:
+            refs.append(self.style_image)
+            tasks.append("style")
+            identity_rule = "Use reference 1 for character identity. " if reference_images else "Use the text for character identity. "
+            prompt = ("generate a same style image. " + identity_rule
+                      + f"Use reference {len(refs)} only for linework, flat coloring and chibi proportions; "
+                      + "do not copy its hair color, outfit, pose or accessories. " + prompt)
+        ref_res = int(os.getenv("DREAMO_REF_RES", "512"))
         guidance = float(os.getenv("DREAMO_GUIDANCE", "4.5"))
         true_cfg = float(os.getenv("DREAMO_TRUE_CFG", "1.0"))
-        neg_guidance = float(os.getenv("DREAMO_NEG_GUIDANCE", "3.5"))
-
-        np_refs = [
-            np.asarray(self._on_white(img), dtype=np.uint8)
-            for img in reference_images
-        ]
-
-        ref_conds, _, resolved_seed = self.dreamo.pre_condition(
-            ref_images=np_refs,
-            ref_tasks=reference_tasks,
-            ref_res=ref_res,
-            seed=str(seed),
-        )
-
-        result = self.dreamo.dreamo_pipeline(
-            prompt=prompt,
-            width=int(width),
-            height=int(height),
-            num_inference_steps=self._resolved_steps(requested_steps),
-            guidance_scale=guidance,
-            ref_conds=ref_conds,
-            generator=torch.Generator(
-                device="cpu"
-            ).manual_seed(int(resolved_seed)),
-            true_cfg_scale=true_cfg,
-            true_cfg_start_step=0,
-            true_cfg_end_step=0,
-            negative_prompt=self.base_negative,
-            neg_guidance_scale=neg_guidance,
-            first_step_guidance_scale=guidance,
-        ).images[0]
-
-        self._cleanup_memory()
+        steps = self._resolved_steps(requested_steps)
+        width = int(width or os.getenv("DREAMO_WIDTH", "768"))
+        height = int(height or os.getenv("DREAMO_HEIGHT", "768"))
+        if not all(512 <= v <= 1536 and v % 16 == 0 for v in (width, height)):
+            raise ValueError("DREAMO_WIDTH/HEIGHT must be multiples of 16 between 512 and 1536.")
+        if not 256 <= ref_res <= 1024:
+            raise ValueError("DREAMO_REF_RES must be between 256 and 1024.")
+        try:
+            conditions = self._prepare_references(refs, tasks, ref_res)
+            encoder_args = {"prompt": prompt}
+            tokenizer = getattr(self.dreamo.dreamo_pipeline, "tokenizer", None)
+            if tokenizer is not None:
+                # FLUX has a short CLIP encoder and a separate long T5 encoder.
+                # Truncate only CLIP; keep the full identity/action text for T5.
+                tokens = tokenizer(prompt, add_special_tokens=False, truncation=True, max_length=75)["input_ids"]
+                encoder_args = {"prompt": tokenizer.decode(tokens, skip_special_tokens=True), "prompt_2": prompt}
+            result = self.dreamo.dreamo_pipeline(
+                **encoder_args, width=width, height=height, num_inference_steps=steps,
+                guidance_scale=guidance, ref_conds=conditions,
+                generator=torch.Generator(device="cpu").manual_seed(int(seed)),
+                true_cfg_scale=true_cfg, true_cfg_start_step=0,
+                true_cfg_end_step=steps if true_cfg > 1 else 0,
+                negative_prompt=self.base_negative,
+                neg_guidance_scale=float(os.getenv("DREAMO_NEG_GUIDANCE", "3.5")),
+                first_step_guidance_scale=guidance,
+            ).images[0]
+        except torch.cuda.OutOfMemoryError:
+            self._reference_cache.clear()
+            self._cleanup_memory()
+            raise
+        # Keep the CUDA allocator warm. empty_cache/gc on every image stalls reuse.
         return result
 
     def generate_prompt_with_reference(
@@ -625,6 +659,7 @@ Return JSON only, exactly with these keys:
             reference_tasks=tasks,
             seed=seed,
             requested_steps=num_inference_steps,
+            use_style=self.style_mode != "off",
         )
 
     def generate_base_character(
@@ -705,6 +740,7 @@ Return JSON only, exactly with these keys:
                     reference_tasks=["ip"],
                     seed=seed_base + i,
                     requested_steps=num_inference_steps,
+                    use_style=self.style_mode == "always",
                 )
             )
         return outputs
@@ -735,11 +771,13 @@ Return JSON only, exactly with these keys:
                     reference_tasks=["ip"],
                     seed=seed_base + i,
                     requested_steps=num_inference_steps,
+                    use_style=self.style_mode == "always",
                 )
             )
         return outputs
 
     def image_feature(self, image: Image.Image) -> torch.Tensor:
+        self._ensure_scorer()
         image = self._on_white(image)
         inputs = self.clip_processor(images=image, return_tensors="pt")
         pixel_values = inputs["pixel_values"].to(self.scorer_device)
@@ -764,6 +802,7 @@ Return JSON only, exactly with these keys:
         The sticker planner normally emits a much shorter prompt; this is the hard
         safety guard that prevents the tokenizer warning and indexing failures.
         """
+        self._ensure_scorer()
         text = " ".join(str(text).strip().split())
         if not text:
             return "chibi character sticker"
@@ -873,14 +912,17 @@ Return JSON only, exactly with these keys:
         canvas_size: tuple[int, int] = (740, 640),
         character_fill_ratio: float = 0.84,
     ) -> Image.Image:
+        if self.rembg_session is None:
+            self.rembg_session = new_session("isnet-anime", providers=["CPUExecutionProvider"])
         transparent = remove(
             image.convert("RGB"),
             session=self.rembg_session,
         ).convert("RGBA")
 
         alpha_bbox = transparent.getchannel("A").getbbox()
-        if alpha_bbox:
-            transparent = transparent.crop(alpha_bbox)
+        if alpha_bbox is None:
+            raise ValueError("Background removal produced a fully transparent image.")
+        transparent = transparent.crop(alpha_bbox)
 
         if transparent.width <= 0 or transparent.height <= 0:
             raise ValueError("Background removal produced an empty image.")

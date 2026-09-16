@@ -5,7 +5,6 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
 
 
 @dataclass
@@ -23,20 +22,21 @@ class PromptPlanner:
     """
 
     def __init__(self) -> None:
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is required.")
-
-        base_url = os.getenv("LLM_BASE_URL", "").strip()
-        kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
-
-        self.client = OpenAI(**kwargs)
-        self.model = os.getenv(
-            "PROMPT_LLM_MODEL",
-            "gpt-5.6-luna",
-        ).strip()
+        self.mode = os.getenv("PROMPT_PLANNER_MODE", "template").strip().lower()
+        if self.mode not in {"template", "llm"}:
+            raise ValueError("PROMPT_PLANNER_MODE must be template or llm.")
+        self.client = None
+        self.model = os.getenv("PROMPT_LLM_MODEL", "").strip()
+        if self.mode == "llm":
+            from openai import OpenAI
+            api_key = os.getenv("OPENAI_API_KEY", "").strip()
+            if not api_key or not self.model:
+                raise RuntimeError("LLM mode requires OPENAI_API_KEY and PROMPT_LLM_MODEL.")
+            kwargs = {"api_key": api_key, "timeout": 45.0, "max_retries": 1}
+            base_url = os.getenv("LLM_BASE_URL", "").strip()
+            if base_url:
+                kwargs["base_url"] = base_url
+            self.client = OpenAI(**kwargs)
 
     @staticmethod
     def _normalize_framing(value: str) -> str:
@@ -84,6 +84,11 @@ class PromptPlanner:
         framing_hint: str,
     ) -> str:
         framing_hint = self._normalize_framing(framing_hint)
+        if self.mode == "template":
+            frame = "Complete full-body view, hands and feet visible" if framing_hint == "full_body" else "Head and upper torso, visible hands, no invented lower-body clothing"
+            return (f"{emoji_style}. {frame}. One neutral front-facing chibi character, arms relaxed, "
+                    f"eyes open, closed mouth, no props or text. Identity: {character_profile}. "
+                    f"Requested correction: {user_request or 'none'}. Preserve only supported identity features.")
 
         system = """
 You create ONE canonical chibi character-reference prompt for DreamO/FLUX.
@@ -183,6 +188,15 @@ Write one coherent English canonical generation prompt.
         framing_hint: str,
     ) -> StickerPlan:
         framing_hint = self._normalize_framing(framing_hint)
+        if self.mode == "template":
+            frame = "full-body" if framing_hint == "full_body" else "upper-body"
+            prompt = (f"One {frame} chibi reaction sticker. Action and expression: {detailed_variant}. "
+                      "Make the hands, silhouette and facial expression clearly readable. "
+                      f"Preserve character identity from the approved reference: {canonical_profile}. "
+                      "Change the pose to match the reaction. Plain white background; no lettering. "
+                      "For an upper-body crop, express any leg action through torso, arms and face.")
+            return StickerPlan(prompt, f"{frame} chibi sticker, {detailed_variant}")
+
 
         system = """
 You plan ONE chibi reaction sticker for DreamO/FLUX.

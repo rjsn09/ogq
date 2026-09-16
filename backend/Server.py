@@ -1,44 +1,32 @@
-import os
+from __future__ import annotations
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
-
-import base64
-import gc
 import io
-import json
 import logging
+import os
 import threading
 import time
-import traceback
 import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
-
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-
-import torch
-import uvicorn
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from PIL import Image
-from pyngrok import ngrok
-from EmojiGenerator import EmojiGenerator
-from canonical_api import install_canonical_api
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
+import uvicorn
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+
+from canonical_api import install_canonical_api
+from sse_stream import generation_queue, job_snapshot, stream_response
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ogq")
-
-if torch.cuda.is_available():
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
-    torch.backends.cudnn.benchmark = True
+generator: Any = None
+generation_lock = threading.Lock()
 
 VARIANT_PROMPTS = [
     ("기본", "neutral face, soft gentle smile, relaxed standing pose, looking at viewer"),
@@ -87,448 +75,118 @@ VARIANT_PROMPT_MAP: dict[str, str] = {
 }
 DEFAULT_ORDER: list[str] = [name for name, _ in VARIANT_PROMPTS]
 
-VARIANT_STRENGTH_DELTA: dict[str, float] = {
-    "기본": -0.10,
-    "깜짝!": 0.06,
-    "사랑해요": 0.05,
-    "신남!": 0.08,
-    "잘게요": 0.10,
-    "엉엉": 0.06,
-    "축하해요": 0.06,
-    "시무룩": 0.05,
-}
-
-
-generator: Optional[EmojiGenerator] = None
-jobs: dict[str, dict] = {}
-jobs_lock = threading.Lock()
-generation_lock = threading.Lock()
-
-JOB_DONE_TTL_SECONDS = 10 * 60
-JOB_MAX_LIFETIME_SECONDS = 60 * 60
-JOB_CLEANUP_INTERVAL_SECONDS = 60
-
-
-def pil_to_dataurl(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True, compress_level=9)
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{b64}"
-
-
-def _cleanup_stale_jobs() -> None:
-    now = time.time()
-    with jobs_lock:
-        stale_ids: list[str] = []
-        for jid, job in jobs.items():
-            created_at = job.get("created_at", now)
-            finished_at = job.get("finished_at")
-
-            if job.get("status") in ("done", "error") and finished_at is not None:
-                if now - finished_at > JOB_DONE_TTL_SECONDS:
-                    stale_ids.append(jid)
-                    continue
-
-            if now - created_at > JOB_MAX_LIFETIME_SECONDS:
-                stale_ids.append(jid)
-
-        for jid in stale_ids:
-            del jobs[jid]
-
-        if stale_ids:
-            logger.info("Cleaned %d stale jobs: %s", len(stale_ids), stale_ids)
-
-
-def run_job(
-    job_id: str,
-    ref_img: Optional[Image.Image],
-    character_base: str,
-    ip_scale: float,
-    num_inference_steps: int,
-    targets: list[tuple[int, str]],
-    candidate_count: int,
-    img2img_strength: float,
-) -> None:
-    try:
-        with generation_lock:
-            _run_job_inner(
-                job_id=job_id,
-                ref_img=ref_img,
-                character_base=character_base,
-                ip_scale=ip_scale,
-                num_inference_steps=num_inference_steps,
-                targets=targets,
-                candidate_count=candidate_count,
-                img2img_strength=img2img_strength,
-            )
-    except Exception as exc:
-        logger.error("run_job(%s) unhandled error", job_id)
-        logger.error(traceback.format_exc())
-        with jobs_lock:
-            if job_id in jobs:
-                jobs[job_id]["status"] = "error"
-                jobs[job_id]["error"] = f"Unexpected generation error: {exc}"
-                jobs[job_id]["finished_at"] = time.time()
-
-
-def _run_job_inner(
-    job_id: str,
-    ref_img: Optional[Image.Image],
-    character_base: str,
-    ip_scale: float,
-    num_inference_steps: int,
-    targets: list[tuple[int, str]],
-    candidate_count: int,
-    img2img_strength: float,
-) -> None:
-    if generator is None:
-        raise RuntimeError("Generator is not initialized.")
-    try:
-        auto_caption = generator.caption_image(ref_img) if ref_img is not None else ""
-        character_profile = generator.build_character_profile(
-            auto_caption,
-            character_base,
-        )
-
-        if not character_profile:
-            raise ValueError("character_profile is False.")
-
-        with jobs_lock:
-            jobs[job_id]["auto_caption"] = auto_caption
-            jobs[job_id]["character_profile"] = character_profile
-
-    except Exception as exc:
-        logger.error("run_job(%s) reference analysis error", job_id)
-        logger.error(traceback.format_exc())
-        with jobs_lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["error"] = f"Reference analysis failed: {exc}"
-            jobs[job_id]["finished_at"] = time.time()
-        return
-    base_seed = int(uuid.UUID(job_id)) % (2**31 - 1)
-
-    try:
-        base_character = generator.generate_base_character(
-            character_profile=character_profile,
-            ref_image=ref_img,
-            ip_scale=ip_scale,
-            num_inference_steps=max(24, num_inference_steps),
-            seed=base_seed,
-        )
-
-        base_feature = generator.image_feature(base_character)
-        ref_feature = (
-            generator.image_feature(ref_img)
-            if ref_img is not None
-            else None
-        )
-
-    except torch.cuda.OutOfMemoryError:
-        logger.error("run_job(%s) CUDA OOM while creating base character", job_id)
-        logger.error(traceback.format_exc())
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-        with jobs_lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["error"] = "OOM while creating base character"
-            jobs[job_id]["finished_at"] = time.time()
-        return
-    except Exception as exc:
-        logger.error("run_job(%s) base character generation error", job_id)
-        logger.error(traceback.format_exc())
-        with jobs_lock:
-            jobs[job_id]["status"] = "error"
-            jobs[job_id]["error"] = f"Base character generation failed: {exc}"
-            jobs[job_id]["finished_at"] = time.time()
-        return
-
-    done = 0
-
-    for idx, name_kr in targets:
-        variant_desc = VARIANT_PROMPT_MAP.get(name_kr, name_kr)
-        strength_delta = VARIANT_STRENGTH_DELTA.get(name_kr, 0.0)
-        slot_strength = generator._clamp(img2img_strength + strength_delta, 0.35, 0.75,)
-        try:
-            variant_feature = generator.text_feature(variant_desc)
-
-            candidates = generator.generate_variant_candidates(
-                character_profile=character_profile,
-                variant_desc=variant_desc,
-                ref_image=ref_img,
-                base_image=base_character,
-                ip_scale=ip_scale,
-                num_inference_steps=num_inference_steps,
-                strength=slot_strength,
-                candidate_count=candidate_count,
-                seed_base=base_seed + (idx * 100),
-            )
-            if len(candidates) == 1:
-                best_img = candidates[0]
-                best_score = -1
-                score_details = {
-                    "reference": -1,
-                    "base": -1,
-                    "prompt": -1,
-                }
-            else:
-                best_img, best_score, score_details = generator.pick_best_candidate(
-                    candidates=candidates,
-                    base_feature=base_feature,
-                    variant_feature=variant_feature,
-                    ref_feature=ref_feature,
-                )
-
-            out_img = generator.to_ogq_sticker(best_img)
-
-            done += 1
-            with jobs_lock:
-                jobs[job_id]["images"].append(
-                    {
-                        "index": idx,
-                        "name": name_kr,
-                        "image": pil_to_dataurl(out_img),
-                        "score": round(best_score, 4),
-                        "score_detail": {
-                            key: round(value, 4) for key, value in score_details.items()
-                        },
-                    }
-                )
-                jobs[job_id]["completed"] = done
-
-        except torch.cuda.OutOfMemoryError:
-            logger.error("run_job(%s) CUDA OOM at slot %s (%s)", job_id, idx, name_kr,)
-            logger.error(traceback.format_exc())
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-            with jobs_lock:
-                jobs[job_id]["status"] = "error"
-                jobs[job_id]["error"] = f"GPU memory ran out while generating slot {idx} ({name_kr})."
-                jobs[job_id]["finished_at"] = time.time()
-            return
-
-        except Exception as exc:
-            logger.error("run_job(%s) slot %s (%s) generation error", job_id, idx, name_kr,)
-            logger.error(traceback.format_exc())
-            with jobs_lock:
-                jobs[job_id]["status"] = "error"
-                jobs[job_id]["error"] = f"Slot {idx} ({name_kr}) generation failed: {exc}"
-                jobs[job_id]["finished_at"] = time.time()
-            return
-
-    with jobs_lock:
-        jobs[job_id]["status"] = "done"
-        jobs[job_id]["finished_at"] = time.time()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global generator
+    from EmojiGenerator import EmojiGenerator
+    generator = EmojiGenerator(model_id=os.getenv("MODEL_ID", ""), lora_model=os.getenv("LORA_MODEL", ""))
+    tunnel = None
+    if os.getenv("NGROK_AUTHTOKEN", "").strip():
+        from pyngrok import ngrok
+        ngrok.set_auth_token(os.environ["NGROK_AUTHTOKEN"])
+        options = {"domain": os.environ["NGROK_DOMAIN"]} if os.getenv("NGROK_DOMAIN") else {}
+        tunnel = ngrok.connect(int(os.getenv("PORT", "8000")), **options)
+        logger.info("Server URL: %s", tunnel.public_url)
+    stop = threading.Event()
 
-    model_id = os.getenv( "MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0",)
-    lora_model = os.getenv("LORA_MODEL", "Zzul02.safetensors",)
-    generator = EmojiGenerator(model_id=model_id, lora_model=lora_model,)
+    def cleanup_loop():
+        while not stop.wait(60):
+            canonical_api_service.cleanup()
 
-    port = int(os.getenv("PORT", "8000"))
-
+    cleaner = threading.Thread(target=cleanup_loop, daemon=True)
+    cleaner.start()
     try:
-        ngrok_authtoken = os.getenv("NGROK_AUTHTOKEN", "").strip()
-        ngrok_domain = os.getenv("NGROK_DOMAIN", "").strip()
-
-        if ngrok_authtoken:
-            ngrok.set_auth_token(ngrok_authtoken)
-
-            if ngrok_domain:
-                public_url = ngrok.connect(port, domain=ngrok_domain).public_url
-            else:
-                public_url = ngrok.connect(port).public_url
-
-            logger.info("Public server URL: %s", public_url)
-        else:
-            logger.info("NGROK_AUTHTOKEN is not set.")
-
-    except Exception as exc:
-        logger.error("ngrok connection failed: %s", exc)
-
-    cleanup_stop = threading.Event()
-
-    def _cleanup_loop() -> None:
-        while not cleanup_stop.is_set():
-            _cleanup_stale_jobs()
-            cleanup_stop.wait(JOB_CLEANUP_INTERVAL_SECONDS)
-
-    cleanup_thread = threading.Thread(target=_cleanup_loop, daemon=True)
-    cleanup_thread.start()
-
-    yield
-
-    cleanup_stop.set()
-    try:
-        ngrok.kill()
-    except Exception:
-        pass
+        yield
+    finally:
+        stop.set()
+        generation_queue.shutdown()
+        if tunnel:
+            ngrok.disconnect(tunnel.public_url)
 
 
 app = FastAPI(lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-canonical_api_service = install_canonical_api(
-    app=app,
-    get_generator=lambda: generator,
-    generation_lock=generation_lock,
-    variant_prompt_map=VARIANT_PROMPT_MAP,
-    default_order=DEFAULT_ORDER,
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+canonical_api_service = install_canonical_api(app=app, get_generator=lambda: generator, generation_lock=generation_lock, variant_prompt_map=VARIANT_PROMPT_MAP, default_order=DEFAULT_ORDER)
 
 
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled exception on %s %s", request.method, request.url)
-    logger.error(traceback.format_exc())
-    return JSONResponse(status_code=500, content={"error": f"Internal server error: {exc}"},)
+def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, candidate_count, steps):
+    service = canonical_api_service
+    try:
+        service._run_canonical_job(canonical_id=canonical_id, ref_image=ref_image, original_user_text=character_base, edit_request="", ip_scale=0.6, steps=steps, generation_number=0)
+        with service.canonicals_lock:
+            item = service.canonicals[canonical_id]
+            if item["status"] != "ready":
+                raise RuntimeError(item.get("error") or "Canonical generation failed.")
+            item.update(approved=True, status="approved")
+        service._run_sticker_job(job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=0.55, controlnet_scale=0.9, steps=steps)
+    except Exception as exc:
+        logger.exception("Direct sticker set failed")
+        with service.jobs_lock:
+            service.jobs[job_id].update(status="error", error=str(exc), finished_at=time.time())
+
 
 @app.post("/api/generate-set")
-async def create_job(
-    background_tasks: BackgroundTasks,
-    image: Optional[UploadFile] = File(None),
-    character_base: str = Form(""),
-    ip_scale: float = Form(0.5),
-    num_inference_steps: int = Form(28),
-    indices: str = Form(""),
-    variant_names: str = Form(""),
-    candidate_count: int = Form(3),
-    img2img_strength: float = Form(0.55),
-):
-    _cleanup_stale_jobs()
-
-    character_base = character_base.strip()
-
-    ref_img: Optional[Image.Image] = None
+async def create_job(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.5), num_inference_steps: int = Form(0, ge=0, le=50), indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), transport: str = Form("sse", pattern="^(sse|job)$")):
+    service = canonical_api_service
+    service.cleanup()
+    service._generator()
+    ref_image = None
     if image is not None:
-        ref_bytes = await image.read()
-        if ref_bytes:
+        raw = await image.read()
+        if raw:
             try:
-                ref_img = Image.open(io.BytesIO(ref_bytes)).convert("RGBA")
-            except Exception as exc:
-                return JSONResponse(status_code=400, content={"error": f"Invalid image file: {exc}"},)
-
-    if ref_img is None and not character_base:
-        return JSONResponse(status_code=400, content={"error": "A reference image or character description is required."},)
-
+                with Image.open(io.BytesIO(raw)) as source:
+                    ref_image = source.convert("RGBA")
+            except Exception:
+                raise HTTPException(400, "Invalid reference image.")
+    if ref_image is None and not character_base.strip():
+        raise HTTPException(400, "Reference image or character description is required.")
+    targets = service._parse_targets(indices, variant_names)
+    if not targets or len(targets) > 24 or len({i for i, _ in targets}) != len(targets):
+        raise HTTPException(400, "Choose 1 to 24 unique generation slots.")
+    job_id, canonical_id = str(uuid.uuid4()), str(uuid.uuid4())
+    now = time.time()
+    with service.canonicals_lock:
+        service.canonicals[canonical_id] = {"status": "generating", "approved": False, "original_image": ref_image, "original_user_text": character_base.strip(), "ip_scale": ip_scale, "steps": num_inference_steps, "generation_number": 0, "canonical_image": None, "canonical_image_pil": None, "error": None, "created_at": now, "updated_at": now}
+    with service.jobs_lock:
+        service.jobs[job_id] = {"status": "running", "completed": 0, "total": len(targets), "images": [], "error": None, "created_at": now, "finished_at": None, "canonical_id": canonical_id}
     try:
-        idx_list = json.loads(indices) if indices else []
-        if not isinstance(idx_list, list):
-            idx_list = []
-    except (json.JSONDecodeError, TypeError):
-        idx_list = []
+        generation_queue.submit(run_direct_set, job_id, canonical_id, ref_image, character_base.strip(), targets, candidate_count, num_inference_steps)
+    except Exception:
+        with service.jobs_lock:
+            service.jobs.pop(job_id, None)
+        with service.canonicals_lock:
+            service.canonicals.pop(canonical_id, None)
+        raise
+    events_url = f"/api/generate-set/{job_id}/events"
+    if transport == "job":
+        return {"job_id": job_id, "events_url": events_url}
+    return stream_response(request, lambda: job_snapshot(service.jobs, service.jobs_lock, job_id), {"job_id": job_id, "events_url": events_url})
 
-    try:
-        name_map_raw = json.loads(variant_names) if variant_names else {}
-        if not isinstance(name_map_raw, dict):
-            name_map_raw = {}
-    except (json.JSONDecodeError, TypeError):
-        name_map_raw = {}
 
-    name_map: dict[int, str] = {}
-    for key, value in name_map_raw.items():
-        try:
-            name_map[int(key)] = str(value)
-        except (TypeError, ValueError):
-            continue
-
-    if not idx_list:
-        targets = [(i, name) for i, name in enumerate(DEFAULT_ORDER, start=1)]
-    else:
-        targets: list[tuple[int, str]] = []
-        for raw_index in idx_list:
-            try: i = int(raw_index)
-            except (TypeError, ValueError): continue
-
-            if i <= 0: continue
-
-            default_name = DEFAULT_ORDER[i - 1] if 1 <= i <= len(DEFAULT_ORDER) else f"이모티콘 {i}"
-            name = name_map.get(i) or default_name
-            targets.append((i, name))
-
-    if not targets:
-        return JSONResponse(status_code=400, content={"error": "No valid generation slots were provided."},)
-
-    ip_scale = max(0.0, min(1.2, float(ip_scale)))
-    num_inference_steps = max(12, min(50, int(num_inference_steps)))
-    candidate_count = max(1, min(4, int(candidate_count)))
-    img2img_strength = max(0.35, min(0.75, float(img2img_strength)))
-
-    job_id = str(uuid.uuid4())
-
-    with jobs_lock:
-        jobs[job_id] = {
-            "status": "running",
-            "completed": 0,
-            "total": len(targets),
-            "images": [],
-            "auto_caption": "",
-            "character_profile": "",
-            "created_at": time.time(),
-            "finished_at": None,
-        }
-
-    background_tasks.add_task(
-        run_job,
-        job_id,
-        ref_img,
-        character_base,
-        ip_scale,
-        num_inference_steps,
-        targets,
-        candidate_count,
-        img2img_strength,
-    )
-
-    return {"job_id": job_id}
+@app.get("/api/generate-set/{job_id}/events")
+async def job_events(job_id: str, request: Request, after: int = 0):
+    service = canonical_api_service
+    return stream_response(request, lambda: job_snapshot(service.jobs, service.jobs_lock, job_id), {"job_id": job_id}, after)
 
 
 @app.get("/api/generate-set/{job_id}")
 def get_job(job_id: str, since: int = 0):
-    with jobs_lock:
-        job = jobs.get(job_id)
-        if job is None:
-            return JSONResponse(status_code=404, content={"error": "job not found"},)
-
-        all_images = job["images"]
-        if 0 <= since < len(all_images): new_images = all_images[since:]
-        else: new_images = []
-
-        return {
-            "status": job["status"],
-            "completed": job["completed"],
-            "total": job["total"],
-            "images": new_images,
-            "error": job.get("error"),
-        }
+    service = canonical_api_service
+    state = job_snapshot(service.jobs, service.jobs_lock, job_id)
+    if state is None:
+        raise HTTPException(404, "Job not found.")
+    return {**state, "completed": len(state["images"]), "images": state["images"][max(0, since):]}
 
 
 @app.get("/api/health")
 def health():
-    with jobs_lock:
-        job_count = len(jobs)
-
-    return {
-        "status": "ok",
-        "device": generator.device if generator else "loading",
-        "active_jobs": job_count,
-    }
+    service = canonical_api_service
+    with service.jobs_lock:
+        active = sum(j["status"] not in {"done", "error"} for j in service.jobs.values())
+    return {"status": "ok" if generator else "loading", "device": generator.device if generator else "loading", "active_jobs": active}
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "8000")),
-    )
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
