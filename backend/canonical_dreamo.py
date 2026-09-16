@@ -22,6 +22,14 @@ class PromptPlanner:
     """
 
     def __init__(self) -> None:
+        print("=== API CONFIG ===")
+        print("PROMPT_PLANNER_MODE:", os.getenv("PROMPT_PLANNER_MODE"))
+        print("PROMPT_LLM_MODEL:", os.getenv("PROMPT_LLM_MODEL"))
+        print("LLM_BASE_URL:", os.getenv("LLM_BASE_URL") or "(default)")
+        print("OPENAI_API_KEY:", "SET" if os.getenv("OPENAI_API_KEY") else "MISSING")
+        print("GROQ_API_KEY:", "SET" if os.getenv("GROQ_API_KEY") else "MISSING")
+        print("GROQ_VISION_MODEL:", os.getenv("GROQ_VISION_MODEL"))
+        print("==================")
         self.mode = os.getenv("PROMPT_PLANNER_MODE", "template").strip().lower()
         if self.mode not in {"template", "llm"}:
             raise ValueError("PROMPT_PLANNER_MODE must be template or llm.")
@@ -64,14 +72,18 @@ class PromptPlanner:
         system: str,
         user: str,
     ) -> dict[str, Any]:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={"type": "json_object"},
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                response_format={"type": "json_object"},
+            )
+        except Exception as e:
+            print("[LLM] prompt planner ERROR:", type(e).__name__, str(e))
+            raise
         content = response.choices[0].message.content or "{}"
         return self._parse_json(content)
 
