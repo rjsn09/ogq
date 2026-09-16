@@ -24,7 +24,7 @@ const canonicalFlow = useCanonicalGeneration({
   canonicalSteps: 30,
 
   // Put your CURRENT job-id handling here.
-  // If your existing code starts polling after setJobId(), this is enough.
+  // Subscribe to getStickerJob(newJobId, 0, { onImage }) for SSE results.
   onStickerJobStarted: (newJobId) => {
     setJobId(newJobId);
   },

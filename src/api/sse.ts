@@ -30,7 +30,7 @@ export class OGQStreamError extends Error {
 }
 
 const env = (import.meta as ImportMeta & { env?: { VITE_BACKEND_URL?: string; DEV?: boolean } }).env;
-const defaultBase = env?.VITE_BACKEND_URL?.trim() || (env?.DEV ? 'http://localhost:8000' : '');
+const defaultBase = env?.VITE_BACKEND_URL?.trim() || '';
 
 export function apiUrl(path: string, baseUrl = defaultBase): string {
   if (!path.startsWith('/api/') || path.startsWith('//')) throw new OGQStreamError('잘못된 API 경로입니다.');

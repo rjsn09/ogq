@@ -434,7 +434,7 @@ class CanonicalApiService:
 
     def _register_routes(self) -> None:
         @self.router.post("")
-        async def create_canonical(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.60), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^(sse|job)$")):
+        async def create_canonical(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.60), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^sse$")):
             self.cleanup()
             ref_image = None
             if image is not None:
@@ -464,8 +464,6 @@ class CanonicalApiService:
                     self.canonicals.pop(canonical_id, None)
                 raise
             events_url = f"/api/canonical/{canonical_id}/events"
-            if transport == "job":
-                return {"canonical_id": canonical_id, "events_url": events_url}
             return stream_response(request, lambda: self._canonical_snapshot(canonical_id), {"canonical_id": canonical_id, "events_url": events_url})
 
         @self.router.get("/{canonical_id}/events")
@@ -492,7 +490,7 @@ class CanonicalApiService:
             return {"canonical_id": canonical_id, "approved": True}
 
         @self.router.post("/{canonical_id}/regenerate")
-        async def regenerate_canonical(canonical_id: str, request: Request, edit_request: str = Form(""), transport: str = Form("sse", pattern="^(sse|job)$")):
+        async def regenerate_canonical(canonical_id: str, request: Request, edit_request: str = Form(""), transport: str = Form("sse", pattern="^sse$")):
             with self.jobs_lock:
                 if any(j["canonical_id"] == canonical_id and j["status"] not in {"done", "error"} for j in self.jobs.values()):
                     raise HTTPException(409, "Wait until the current sticker set finishes.")
@@ -511,12 +509,10 @@ class CanonicalApiService:
                     self.canonicals[canonical_id] = old_item
                 raise
             events_url = f"/api/canonical/{canonical_id}/events"
-            if transport == "job":
-                return {"canonical_id": canonical_id, "events_url": events_url}
             return stream_response(request, lambda: self._canonical_snapshot(canonical_id), {"canonical_id": canonical_id, "events_url": events_url})
 
         @self.router.post("/{canonical_id}/generate-set")
-        async def generate_set(canonical_id: str, request: Request, indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), controlnet_scale: float = Form(0.90), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^(sse|job)$")):
+        async def generate_set(canonical_id: str, request: Request, indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), controlnet_scale: float = Form(0.90), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^sse$")):
             self.cleanup()
             with self.canonicals_lock:
                 canonical = self.canonicals.get(canonical_id)
@@ -538,8 +534,6 @@ class CanonicalApiService:
                     self.jobs.pop(job_id, None)
                 raise
             events_url = f"/api/canonical/generate-set/{job_id}/events"
-            if transport == "job":
-                return {"job_id": job_id, "events_url": events_url}
             return stream_response(request, lambda: job_snapshot(self.jobs, self.jobs_lock, job_id), {"job_id": job_id, "canonical_id": canonical_id, "events_url": events_url})
 
         @self.router.get("/generate-set/{job_id}/events")

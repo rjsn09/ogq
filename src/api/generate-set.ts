@@ -1,4 +1,4 @@
-import { VARIANT_CATALOG, DEFAULT_VARIANTS } from '../utils/imageGenerator';
+import { VARIANT_CATALOG, DEFAULT_VARIANTS } from '../app/utils/imageGenerator';
 import { streamOGQ } from './sse';
 import type { StreamData } from './sse';
 
@@ -10,6 +10,8 @@ export interface GenerateOptions {
   canonicalId?: string;
   candidateCount?: number;
   numInferenceSteps?: number;
+  img2imgStrength?: number;
+  controlnetScale?: number;
   maxReconnects?: number;
   onStart?: (data: StreamData) => void;
 }
@@ -44,6 +46,8 @@ export async function generateOGQImages(imageDataUrl: string, onProgress?: (coun
   formData.append('variant_names', JSON.stringify(names));
   formData.append('candidate_count', String(candidateCount));
   formData.append('num_inference_steps', String(steps));
+  formData.append('img2img_strength', String(options.img2imgStrength ?? 0.68));
+  formData.append('controlnet_scale', String(options.controlnetScale ?? 0.90));
   formData.append('transport', 'sse');
 
   const path = options.canonicalId ? `/api/canonical/${encodeURIComponent(options.canonicalId)}/generate-set` : '/api/generate-set';

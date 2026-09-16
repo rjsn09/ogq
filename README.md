@@ -40,7 +40,7 @@ npm install
 npm run dev      # 개발 서버 실행
 ```
 
-백엔드는 별도 서버로 구동되며, 프론트엔드는 `/api/generate-set` 엔드포인트를 통해 생성 작업을 요청하고 결과를 폴링합니다.
+백엔드는 별도 서버로 구동되며, 프론트엔드는 `/api/generate-set` 엔드포인트를 통해 생성 작업을 요청하고 결과를 SSE로 수신합니다.
 
 ---
 
@@ -174,3 +174,9 @@ set_ip_adapter_scale에 값을 실수 형태로 넣으니 참조이미지의 구
 ---
 
 현재 tensor.art에서 이모티콘 스타일을 입힐 LoRA를 학습시키는 중 + 파이프라인을 좀 더 간결하게 하는 등 수정을 진행 중
+
+
+### SSE
+
+backend - frontend 통신 방식을 http sse방식으로 변경하. 
+이제 frontend에서 계속해서 jobid로 get요청을 보내는 방식이 아닌 sse방식으로 전환

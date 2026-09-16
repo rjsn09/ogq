@@ -143,7 +143,7 @@ def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, can
 
 
 @app.post("/api/generate-set")
-async def create_job(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.5), num_inference_steps: int = Form(0, ge=0, le=50), indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), transport: str = Form("sse", pattern="^(sse|job)$")):
+async def create_job(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.5), num_inference_steps: int = Form(0, ge=0, le=50), indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), transport: str = Form("sse", pattern="^sse$")):
     service = canonical_api_service
     service.cleanup()
     service._generator()
@@ -176,8 +176,6 @@ async def create_job(request: Request, image: Optional[UploadFile] = File(None),
             service.canonicals.pop(canonical_id, None)
         raise
     events_url = f"/api/generate-set/{job_id}/events"
-    if transport == "job":
-        return {"job_id": job_id, "events_url": events_url}
     return stream_response(request, lambda: job_snapshot(service.jobs, service.jobs_lock, job_id), {"job_id": job_id, "events_url": events_url})
 
 

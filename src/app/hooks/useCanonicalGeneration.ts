@@ -3,7 +3,6 @@ import {
   approveCanonical,
   createCanonical,
   generateStickerSet,
-  getCanonical,
   regenerateCanonical,
   type CanonicalStatusValue,
 } from "../lib/canonicalFlow";
@@ -46,11 +45,15 @@ export function useCanonicalGeneration({
 
   const pendingRequest = useRef<PendingStickerRequest | null>(null);
   const inputVersion = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => controllerRef.current?.abort(), []);
 
   // If the user's source character changes, the previous approval must not
   // silently remain valid.
   useEffect(() => {
     inputVersion.current += 1;
+    controllerRef.current?.abort();
+    setBusy(false);
     setCanonicalId(null);
     setApprovedCanonicalId(null);
     setCanonicalImage(null);
@@ -59,50 +62,20 @@ export function useCanonicalGeneration({
     pendingRequest.current = null;
   }, [image, characterBase]);
 
-  useEffect(() => {
-    if (!canonicalId || !panelOpen) return;
-    if (status !== "generating") return;
-
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const result = await getCanonical(canonicalId);
-        if (cancelled) return;
-
-        setStatus(result.status);
-        setCanonicalImage(result.image ?? null);
-        setError(result.error ?? null);
-      } catch (e) {
-        if (cancelled) return;
-        setStatus("error");
-        setError(
-          e instanceof Error ? e.message : "상태 확인에 실패했습니다.",
-        );
-      }
-    };
-
-    void poll();
-    const timer = window.setInterval(poll, 1200);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [canonicalId, panelOpen, status]);
-
   const startStickerJob = useCallback(
     async (
       id: string,
       request: PendingStickerRequest,
     ) => {
       setBusy(true);
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      let started = false;
       try {
-        const jobId = await generateStickerSet({
+        await generateStickerSet({
           canonicalId: id,
           ...request,
-        });
-        onStickerJobStarted(jobId);
+        }, { signal: controller.signal, onStart: data => { if (!started && data.job_id) { started = true; onStickerJobStarted(data.job_id); } } });
       } finally {
         setBusy(false);
       }
@@ -126,21 +99,27 @@ export function useCanonicalGeneration({
       setCanonicalImage(null);
 
       const versionAtStart = inputVersion.current;
+      const controller = new AbortController();
+      controllerRef.current?.abort();
+      controllerRef.current = controller;
 
       try {
-        const id = await createCanonical({
+        const result = await createCanonical({
           image,
           characterBase,
           ipScale,
           steps: canonicalSteps,
-        });
+        }, { signal: controller.signal });
 
         // Ignore a result if the user changed the source input while the
         // request was being created.
         if (versionAtStart !== inputVersion.current) return;
 
-        setCanonicalId(id);
+        setCanonicalId(result.canonical_id);
+        setCanonicalImage(result.image ?? null);
+        setStatus(result.status);
       } catch (e) {
+        if (controllerRef.current?.signal.aborted) return;
         setStatus("error");
         setError(
           e instanceof Error
@@ -194,10 +173,16 @@ export function useCanonicalGeneration({
       setError(null);
 
       try {
-        await regenerateCanonical(canonicalId, editRequest);
         setStatus("generating");
         setCanonicalImage(null);
+        const controller = new AbortController();
+        controllerRef.current = controller;
+        const result = await regenerateCanonical(canonicalId, editRequest, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        setCanonicalImage(result.image ?? null);
+        setStatus(result.status);
       } catch (e) {
+        if (controllerRef.current?.signal.aborted) return;
         setStatus("error");
         setError(
           e instanceof Error

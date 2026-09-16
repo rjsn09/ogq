@@ -9,7 +9,6 @@ import {
   approveCanonical,
   createCanonical,
   generateOGQImagesFromCanonical,
-  getCanonical,
   regenerateCanonical,
   type CanonicalStatusValue,
 } from "./lib/ogqGenerator";
@@ -155,9 +154,14 @@ export default function App() {
   const [canonicalError, setCanonicalError] = useState<string | null>(null);
   const [canonicalBusy, setCanonicalBusy] = useState(false);
 
+  const generationController = useRef<AbortController | null>(null);
+  useEffect(() => () => generationController.current?.abort(), []);
+
   const pendingGenerationRef = useRef<PendingGeneration | null>(null);
 
   const invalidateCanonical = useCallback(() => {
+    generationController.current?.abort();
+    setCanonicalBusy(false);
     setCanonicalId(null);
     setApprovedCanonicalId(null);
     setCanonicalImage(null);
@@ -169,49 +173,6 @@ export default function App() {
   useEffect(() => {
     invalidateCanonical();
   }, [description, invalidateCanonical]);
-
-  useEffect(() => {
-    if (
-      !canonicalId ||
-      !canonicalPanelOpen ||
-      canonicalStatus !== "generating"
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const result = await getCanonical(canonicalId);
-        if (cancelled) return;
-
-        setCanonicalStatus(result.status);
-        setCanonicalImage(result.image ?? null);
-        setCanonicalError(result.error ?? null);
-      } catch (err) {
-        if (cancelled) return;
-
-        setCanonicalStatus("error");
-        setCanonicalError(
-          err instanceof Error
-            ? err.message
-            : "Canonical 상태 확인에 실패했습니다."
-        );
-      }
-    };
-
-    void poll();
-
-    const timer = window.setInterval(() => {
-      void poll();
-    }, 1200);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [canonicalId, canonicalPanelOpen, canonicalStatus]);
 
   const handleVariantChange = useCallback(
     (slotIndex: number, variantId: string) => {
@@ -239,6 +200,8 @@ export default function App() {
         setGeneratedImages([]);
       }
 
+      const controller = new AbortController();
+      generationController.current = controller;
       try {
         await generateOGQImagesFromCanonical(
           approvedId,
@@ -248,9 +211,11 @@ export default function App() {
           },
           request.indices,
           request.variantAssignments,
-          request.isPartial ? generatedImages : undefined
+          request.isPartial ? generatedImages : undefined,
+          { signal: controller.signal }
         );
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error("이모티콘 생성 실패:", err);
         alert(
           `생성 중 오류가 발생했습니다: ${
@@ -307,14 +272,22 @@ export default function App() {
       setCanonicalError(null);
       setCanonicalBusy(true);
 
+      const controller = new AbortController();
+      generationController.current?.abort();
+      generationController.current = controller;
       try {
-        const newCanonicalId = await createCanonical(
+        const result = await createCanonical(
           uploadedImage,
-          description || undefined
+          description || undefined,
+          { signal: controller.signal }
         );
 
-        setCanonicalId(newCanonicalId);
+        if (controller.signal.aborted) return;
+        setCanonicalId(result.canonical_id);
+        setCanonicalImage(result.image ?? null);
+        setCanonicalStatus(result.status);
       } catch (err) {
+        if (generationController.current?.signal.aborted) return;
         setCanonicalStatus("error");
         setCanonicalError(
           err instanceof Error
@@ -375,10 +348,16 @@ export default function App() {
       setCanonicalError(null);
 
       try {
-        await regenerateCanonical(canonicalId, editRequest);
         setCanonicalStatus("generating");
         setCanonicalImage(null);
+        const controller = new AbortController();
+        generationController.current = controller;
+        const result = await regenerateCanonical(canonicalId, editRequest, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        setCanonicalImage(result.image ?? null);
+        setCanonicalStatus(result.status);
       } catch (err) {
+        if (generationController.current?.signal.aborted) return;
         setCanonicalStatus("error");
         setCanonicalError(
           err instanceof Error

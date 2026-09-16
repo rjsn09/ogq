@@ -30,25 +30,34 @@ export default async function handler(
       "GET, POST"
     );
 
-    res
-      .status(405)
-      .json({
-        error:
-          "Method not allowed",
-      });
+    res.status(405).json({
+      error: "Method not allowed",
+    });
 
     return;
   }
 
 
+  /*
+   * Vercel 환경에 따라 catch-all parameter가
+   *
+   * req.query.path
+   *
+   * 또는
+   *
+   * req.query["...path"]
+   *
+   * 로 들어올 수 있으므로 둘 다 처리한다.
+   */
   const raw =
-    req.query.path;
+    req.query.path ??
+    req.query["...path"];
 
 
   const parts =
     Array.isArray(raw)
       ? raw
-      : raw
+      : typeof raw === "string"
         ? raw.split("/")
         : [];
 
@@ -56,17 +65,12 @@ export default async function handler(
   if (
     parts.some(
       part =>
-        !/^[a-zA-Z0-9_-]+$/.test(
-          part
-        )
+        !/^[a-zA-Z0-9_-]+$/.test(part)
     )
   ) {
-    res
-      .status(400)
-      .json({
-        error:
-          "잘못된 canonical 경로입니다.",
-      });
+    res.status(400).json({
+      error: "잘못된 canonical 경로입니다.",
+    });
 
     return;
   }
@@ -74,17 +78,33 @@ export default async function handler(
 
   const path =
     parts
-      .map(
-        encodeURIComponent
-      )
+      .map(encodeURIComponent)
       .join("/");
 
 
+  /*
+   * catch-all parameter는 backend query에
+   * 절대로 전달하면 안 된다.
+   */
   const suffix =
     querySuffix(
       req,
-      ["path"]
+      [
+        "path",
+        "...path",
+      ]
     );
+
+
+  console.log(
+    "[CANONICAL PROXY]",
+    {
+      raw,
+      parts,
+      backendPath:
+        `/api/canonical${path ? `/${path}` : ""}${suffix}`,
+    }
+  );
 
 
   await proxyOGQ(
