@@ -19,6 +19,8 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  console.log("[VERCEL CANONICAL]", req.method);
+
   if (
     !["GET", "POST"].includes(
       req.method ?? "GET"
@@ -29,12 +31,9 @@ export default async function handler(
       "GET, POST"
     );
 
-    res
-      .status(405)
-      .json({
-        error:
-          "Method not allowed",
-      });
+    res.status(405).json({
+      error: "Method not allowed",
+    });
 
     return;
   }

@@ -414,6 +414,7 @@ Return JSON only, exactly with these keys:
         image_b64 = self._encode_for_groq(image)
 
         try:
+            print("self.groq_client.chat.completions.create, EmojiGenerator")
             completion = self.groq_client.chat.completions.create(
                 model=self.groq_vision_model,
                 messages=[

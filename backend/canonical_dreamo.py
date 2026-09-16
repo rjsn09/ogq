@@ -73,6 +73,7 @@ class PromptPlanner:
         user: str,
     ) -> dict[str, Any]:
         try:
+            print("self.client.chat.completions.create, canonical_creamo 76")
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
