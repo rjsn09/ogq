@@ -36,12 +36,8 @@ interface JobStatus {
   error?: string;
 }
 
-const POLL_INTERVAL_MS = 2000;
-
-const SERVER_URL = "http://localhost:8000";
-
 function apiUrl(path: string): string {
-  return `${SERVER_URL}${path}`;
+  return path;
 }
 
 async function readJson(res: Response) {
@@ -68,18 +64,17 @@ export async function createCanonical(
   if (characterBase?.trim()) {
     formData.append("character_base", characterBase.trim());
   }
+
   formData.append("ip_scale", "0.60");
   formData.append("num_inference_steps", "30");
 
-  const res = await fetch(apiUrl("/api/canonical"), {
+  const res = await fetch("/api/canonical", {
     method: "POST",
-    headers: {
-      "ngrok-skip-browser-warning": "true",
-    },
     body: formData,
   });
 
   const data = await readJson(res);
+
   return data.canonical_id as string;
 }
 
@@ -87,12 +82,9 @@ export async function getCanonical(
   canonicalId: string
 ): Promise<CanonicalStatus> {
   const res = await fetch(
-    apiUrl(`/api/canonical/${encodeURIComponent(canonicalId)}`),
+    `/api/canonical/${encodeURIComponent(canonicalId)}`,
     {
       cache: "no-store",
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
     }
   );
 
@@ -127,16 +119,9 @@ export async function regenerateCanonical(
   formData.append("edit_request", editRequest);
 
   const res = await fetch(
-    apiUrl(
-      `/api/canonical/${encodeURIComponent(
-        canonicalId
-      )}/regenerate`
-    ),
+    `/api/canonical/${encodeURIComponent(canonicalId)}/regenerate`,
     {
       method: "POST",
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
       body: formData,
     }
   );
@@ -168,26 +153,19 @@ export async function generateOGQImagesFromCanonical(
   }
 
   const formData = new FormData();
+
   formData.append("indices", JSON.stringify(targetIndices));
   formData.append("variant_names", JSON.stringify(names));
 
-  // Stage-2 tuning values.
   formData.append("candidate_count", "2");
   formData.append("img2img_strength", "0.68");
   formData.append("controlnet_scale", "0.90");
   formData.append("num_inference_steps", "30");
 
   const startRes = await fetch(
-    apiUrl(
-      `/api/canonical/${encodeURIComponent(
-        canonicalId
-      )}/generate-set`
-    ),
+    `/api/canonical/${encodeURIComponent(canonicalId)}/generate-set`,
     {
       method: "POST",
-      headers: {
-        "ngrok-skip-browser-warning": "true",
-      },
       body: formData,
     }
   );
@@ -195,74 +173,66 @@ export async function generateOGQImagesFromCanonical(
   const startData = await readJson(startRes);
   const jobId = startData.job_id as string;
 
+  if (!jobId) {
+    throw new Error("job_id를 받지 못했습니다.");
+  }
+
   const results: string[] = Array.from(
     { length: 24 },
     (_, i) => previousImages?.[i] ?? ""
   );
 
-  let receivedCount = 0;
-
-  while (true) {
-    await sleep(POLL_INTERVAL_MS);
-
-    const statusRes = await fetch(
-      apiUrl(
-        `/api/canonical/generate-set/${encodeURIComponent(
-          jobId
-        )}/status?since=${receivedCount}`
-      ),
-      {
-        cache: "no-store",
-        headers: {
-          "ngrok-skip-browser-warning": "true",
-        },
-      }
+  return await new Promise<string[]>((resolve, reject) => {
+    const eventSource = new EventSource(
+      `/api/generate-set/${encodeURIComponent(jobId)}/events`
     );
 
-    const job = (await readJson(statusRes)) as JobStatus;
+    eventSource.onmessage = (event) => {
+      try {
+        const job = JSON.parse(event.data) as JobStatus;
 
-    for (const item of job.images) {
-      if (targetSet.has(item.index)) {
-        results[item.index - 1] = item.image;
+        for (const item of job.images ?? []) {
+          if (targetSet.has(item.index)) {
+            results[item.index - 1] = item.image;
+          }
+        }
+
+        onProgress?.(
+          job.completed ?? 0,
+          [...results]
+        );
+
+        if (job.status === "done") {
+          eventSource.close();
+          resolve(results);
+        }
+
+        if (job.status === "error") {
+          eventSource.close();
+
+          reject(
+            new Error(
+              job.error ?? "생성 중 오류가 발생했습니다."
+            )
+          );
+        }
+      } catch (error) {
+        eventSource.close();
+
+        reject(
+          error instanceof Error
+            ? error
+            : new Error("SSE 데이터 처리 중 오류가 발생했습니다.")
+        );
       }
-    }
+    };
 
-    receivedCount += job.images.length;
+    eventSource.onerror = () => {
+      eventSource.close();
 
-    onProgress?.(job.completed, [...results]);
-
-    if (job.status === "done") {
-      break;
-    }
-
-    if (job.status === "error") {
-      throw new Error(
-        job.error ?? "생성 중 오류가 발생했습니다."
+      reject(
+        new Error("생성 서버와의 SSE 연결이 끊어졌습니다.")
       );
-    }
-  }
-
-  return results;
-}
-
-export function regenerateOGQImages(
-  canonicalId: string,
-  slotIndices: number[],
-  variantAssignments: Record<number, string>,
-  previousImages: (string | null | undefined)[],
-  onProgress?: (count: number, images: string[]) => void
-): Promise<string[]> {
-  return generateOGQImagesFromCanonical(
-    canonicalId,
-    onProgress,
-    slotIndices,
-    variantAssignments,
-    previousImages
-  );
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise<void>((resolve) =>
-    setTimeout(resolve, ms)
-  );
+    };
+  });
 }
