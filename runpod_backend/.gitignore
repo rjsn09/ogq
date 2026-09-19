@@ -1,0 +1,5 @@
+!styles/
+!styles/reference.png
+models/
+.venv/
+__pycache__/

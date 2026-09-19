@@ -6,7 +6,7 @@ import type {
 import {
   proxyOGQ,
   querySuffix,
-} from "../../server/ogqProxy.js";
+} from "../server/ogqProxy.js";
 
 
 export const config = {
@@ -38,26 +38,14 @@ export default async function handler(
   }
 
 
-  /*
-   * Vercel 환경에 따라 catch-all parameter가
-   *
-   * req.query.path
-   *
-   * 또는
-   *
-   * req.query["...path"]
-   *
-   * 로 들어올 수 있으므로 둘 다 처리한다.
-   */
-  const raw =
-    req.query.path ??
-    req.query["...path"];
+  // vercel.json forwards nested canonical routes to this concrete function.
+  const raw = req.query.path;
 
 
   const parts =
     Array.isArray(raw)
       ? raw
-      : typeof raw === "string"
+      : typeof raw === "string" && raw.length > 0
         ? raw.split("/")
         : [];
 
