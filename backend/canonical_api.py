@@ -353,9 +353,10 @@ class CanonicalApiService:
                         canonical_profile=canonical_profile,
                         original_profile=original_profile,
                         theme_name=theme_name,
-                        detailed_variant=f"{detailed_variant}. {user_prompt}" if user_prompt else detailed_variant,
+                        detailed_variant=detailed_variant,
                         emoji_style=generator.base_positive,
                         framing_hint=framing_hint,
+                        user_prompt=user_prompt,
                     )
 
                     candidates = engine.generate_candidates(

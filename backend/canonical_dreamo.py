@@ -238,6 +238,7 @@ Write one coherent English canonical generation prompt.
         detailed_variant: str,
         emoji_style: str,
         framing_hint: str,
+        user_prompt: str = "",
     ) -> StickerPlan:
         framing_hint = self._normalize_framing(framing_hint)
         # Shared by template and LLM modes: identity reference must not lock acting.
@@ -253,6 +254,8 @@ Write one coherent English canonical generation prompt.
                       f"Preserve character identity from the approved reference: {canonical_profile}. "
                       "Change the pose to match the reaction. Plain white background; no lettering. "
                       "For an upper-body crop, express any leg action through torso, arms and face.")
+            if user_prompt:
+                prompt += f" User pose overrides any conflicting theme pose: {user_prompt}"
             return StickerPlan(prompt, f"{frame} chibi sticker, {detailed_variant}")
 
 
@@ -275,6 +278,22 @@ IDENTITY RULES FOR "prompt":
 - Keep the polished Korean messenger-sticker chibi style.
 
 ACTION RULES FOR "prompt":
+- Pose authority is USER_PROMPT > THEME / DETAILED_VARIANT, exclusively.
+- Pose includes head/torso direction, lean, shoulders, gaze, both hands/arms,
+  gesture, camera angle and composition within the required upper-body crop.
+- Resolve each pose detail separately: use the user's explicit detail first;
+  use the theme variant only for details the user leaves unspecified. Discard
+  conflicting theme details completely; never blend them with the user's pose.
+- ORIGINAL CHARACTER PROFILE, APPROVED CANONICAL PROFILE and OGQ STYLE CONTRACT
+  have NO pose authority. Ignore all pose, view, gaze, placement and composition
+  descriptions in them, including centered/front-facing/neutral/upright defaults.
+- Profiles supply persistent appearance only; style supplies rendering only.
+  Never infer the new pose from the reference image. If both permitted sources
+  leave a pose detail unspecified, choose it to express the requested reaction.
+- The upper-body crop limits visible anatomy only; it does not require a centered,
+  front-facing or upright pose. Preserve the user's direction within that crop.
+- Put the resolved pose at the start of prompt and use that same resolved action
+  in clip_prompt. Before returning, check that no discarded pose has reappeared.
 - The NEW requested reaction is the main change.
 - Make the action and facial expression immediately readable.
 - Describe torso/head orientation, both visible arms/hands, posture, expression,
@@ -320,6 +339,9 @@ Return JSON only:
 """.strip()
 
         user = f"""
+USER_PROMPT (highest priority for pose; overrides conflicting theme pose):
+{user_prompt}
+
 APPROVED CANONICAL PROFILE:
 {canonical_profile}
 

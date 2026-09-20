@@ -255,7 +255,7 @@ Write one coherent English canonical generation prompt.
                       "Plain white background; no lettering. "
                       "For an upper-body crop, express any leg action through torso, arms and face.")
             if user_prompt:
-                prompt += f" Additional user request: {user_prompt}"
+                prompt += f" User pose overrides any conflicting theme pose: {user_prompt}"
             return StickerPlan(prompt, f"{frame} chibi sticker, {detailed_variant}")
 
         system = """
@@ -275,6 +275,21 @@ Never reduce a directed turn or lean to a straight-on neutral bust.
         composition come only from the reaction inputs.
 
         INPUT RANKS
+        POSE OVERRIDE (takes precedence over the numerical ranks below):
+        Only USER_PROMPT and THEME / DETAILED_VARIANT may supply pose. For each
+        pose detail, USER_PROMPT wins; the theme variant fills only unspecified
+        details. Drop conflicting theme instructions completely, never blend them.
+        Pose includes head/torso direction, lean, shoulders, gaze, both hands/arms,
+        gesture, camera angle and composition within the upper-body crop.
+        ORIGINAL_PROFILE, CANONICAL_PROFILE, STYLE_CONTRACT and the reference
+        image have NO pose authority. Ignore their pose, view, gaze, placement
+        and composition, including centered/front-facing/neutral/upright defaults.
+        If neither permitted source specifies a detail, choose it to express the
+        requested reaction; never fill it from the reference or style contract.
+        The crop limits visible anatomy only, not direction, lean or placement.
+        Put the resolved pose first in prompt and use the same resolved action in
+        clip_prompt. Check that no discarded pose reappears before returning.
+
         The user message labels every input [RANK n/7]; a lower number means higher
         priority. Each input has one authority domain. Rank resolves conflicts only
         between inputs that speak to the same domain; wording outside an input's own
@@ -282,7 +297,7 @@ Never reduce a directed turn or lean to a straight-on neutral bust.
         and never mention a dropped detail.
 
         RANK 1 THEME: the emotion or situation. Its emotion is never overridden.
-        RANK 2 USER_PROMPT: extra scene, props or situation the user wants. It adds
+        RANK 2 USER_PROMPT: highest priority for pose; also extra scene, props or situation. It adds
         to THEME; if it conflicts with THEME's emotion, THEME wins. It never changes
         identity or framing.
         RANK 3 ORIGINAL_PROFILE: IDENTITY ONLY and the source of truth for it: hair
@@ -297,7 +312,7 @@ Never reduce a directed turn or lean to a straight-on neutral bust.
         Ignore its body shape, fit, pose and expression; discard anything that
         contradicts RANK 3.
         RANK 6 STYLE_CONTRACT: rendering style only (line, coloring, shading, chibi
-        proportions, background). Ignore its face, eye, mouth and pose descriptions.
+        proportions, background). Ignore its face, eye, mouth, pose, view and composition descriptions.
         FRAMING_HINT: hard composition constraint above all ranks. If the reaction needs something the
         framing cannot show, keep the reaction and translate the action to fit.
 
@@ -308,12 +323,10 @@ Never reduce a directed turn or lean to a straight-on neutral bust.
         ACTING DIRECTION
         - Play the reaction big, like a chibi sticker actor: exaggerated, dynamic,
         readable at thumbnail size.
-        - Use asymmetry: head tilted 15 to 30 degrees or turned three-quarter, one
-        shoulder raised or dropped, torso leaning toward or away from the viewer.
-        - Use full-arm gestures when the reaction calls for them: arms thrown up or
-        wide, hands pressed to cheeks, fists clenched, body curled inward.
+        - Preserve the resolved user/theme pose, including explicit symmetry,
+        stillness or subtle gestures. Do not add a mandatory tilt, turn or lean.
         - Give the eyes and mouth an extreme, specific shape instead of a mild one.
-        - Keep a strong pre-curated action at full strength.
+        - Keep a strong pre-curated action at full strength unless overridden by USER_PROMPT.
 
         FRAMING (fixed, overrides every conflicting input)
         - Upper-body composition cropped above the hips; head, shoulders and upper
@@ -360,7 +373,7 @@ Never reduce a directed turn or lean to a straight-on neutral bust.
         """.strip()
 
         user = f"""
-        [RANK 2/7] USER_PROMPT (extra scene the user wants):
+        [RANK 2/7] USER_PROMPT (highest priority for pose; overrides theme pose):
         {user_prompt}
         
         [RANK 1/7] THEME (emotion to convey):
