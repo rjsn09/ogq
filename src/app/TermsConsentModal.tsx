@@ -1,195 +1,243 @@
-import React, { useState } from "react";
+import React, { useState } from 'react'
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { auth } from './firebase/config'
 
-interface TermsConsentModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: (allowAiTraining: boolean) => void;
+interface LoginProps {
+  onSuccess?: () => void
 }
 
-export default function TermsConsentModal({
-  isOpen,
-  onClose,
-  onConfirm,
-}: TermsConsentModalProps) {
-  const [agreeRequired, setAgreeRequired] = useState(false);
-  const [agreeOptional, setAgreeOptional] = useState(false);
+export default function Login({ onSuccess }: LoginProps) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null)
 
-  if (!isOpen) return null;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!agreeRequired) {
-      alert("서비스 이용을 위해 필수 항목에 동의해 주세요.");
-      return;
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, email, password)
+      } else {
+        await signInWithEmailAndPassword(auth, email, password)
+      }
+
+      if (onSuccess) {
+        onSuccess()
+      }
+    } catch (err: any) {
+      console.error(err)
+      if (err.code === 'auth/email-already-in-use') {
+        setError('이미 가입된 이메일입니다. 로그인으로 전환합니다.')
+        setIsSignUp(false)
+      } else if (
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/invalid-credential'
+      ) {
+        setError('이메일 또는 비밀번호가 일치하지 않습니다.')
+      } else if (err.code === 'auth/weak-password') {
+        setError('비밀번호는 최소 6자 이상이어야 합니다.')
+      } else if (err.code === 'auth/invalid-email') {
+        setError('올바른 이메일 형식을 입력하세요.')
+      } else {
+        setError(err.message || '인증에 실패했습니다.')
+      }
+    } finally {
+      setLoading(false)
     }
-    onConfirm(agreeOptional);
-  };
+  }
 
   return (
     <div
       style={{
-        position: "fixed",
-        inset: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 9999,
-        userSelect: "none",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'relative',
+        userSelect: 'none',
       }}
-      onClick={onClose}
     >
-      <div
+      <form
+        onSubmit={handleSubmit}
         style={{
-          position: "relative",
-          width: 400,
-          padding: "32px 28px",
-          background: "#ffffff",
+          position: 'relative',
+          width: 340,
+          padding: '40px 32px 32px 32px',
+          background: '#ffffff',
+          border: '1px solid #e4e4e7',
           borderRadius: 16,
-          border: "1px solid #e4e4e7",
-          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 2,
         }}
-        onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <h3
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div
             style={{
-              fontSize: 20,
-              fontWeight: 800,
-              margin: 0,
-              color: "#09090b",
+              fontSize: 28,
+              fontWeight: 900,
+              letterSpacing: '0.05em',
+              fontFamily: 'Inter, sans-serif',
+              whiteSpace: 'nowrap',
+              color: '#09090b',
             }}
           >
-            서비스 이용 및 데이터 처리 동의
-          </h3>
-          <p style={{ margin: "6px 0 0 0", fontSize: 12, color: "#71717a" }}>
-            이모티콘 생성을 위해 아래 개인정보 처리 방침을 확인해 주세요.
+            {isSignUp ? '회원가입' : '로그인'}
+          </div>
+          <p style={{ margin: '6px 0 0 0', fontSize: 12, color: '#71717a' }}>
+            이모티콘을 생성하려면 로그인이 필요합니다.
           </p>
         </div>
 
-        {/* 간이형 핵심 고지 박스 */}
-        <div
+        {error && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#dc2626',
+              padding: '10px 12px',
+              background: 'rgba(239, 68, 68, 0.06)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              borderRadius: 6,
+              marginBottom: 16,
+              fontFamily: 'monospace',
+            }}
+          >
+            ⚠️ {error}
+          </div>
+        )}
+
+        {/* 이메일 입력 */}
+        <div style={{ marginBottom: 14 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 10,
+              color: '#059669',
+              fontFamily: 'monospace',
+              marginBottom: 6,
+              letterSpacing: '0.1em',
+              fontWeight: 600,
+            }}
+          >
+            아이디 (이메일)
+          </label>
+          <input
+            type="email"
+            placeholder="이메일 주소"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onFocus={() => setFocusedInput('email')}
+            onBlur={() => setFocusedInput(null)}
+            required
+            style={{
+              width: '100%',
+              padding: '11px 13px',
+              background: '#f8fafc',
+              border: `1px solid ${focusedInput === 'email' ? '#10B981' : '#cbd5e1'}`,
+              boxShadow: focusedInput === 'email' ? '0 0 0 3px rgba(16, 185, 129, 0.15)' : 'none',
+              color: '#0f172a',
+              borderRadius: 6,
+              boxSizing: 'border-box',
+              fontSize: 12,
+              outline: 'none',
+              transition: 'all 0.2s ease',
+              fontFamily: 'monospace',
+            }}
+          />
+        </div>
+
+        {/* 비밀번호 입력 */}
+        <div style={{ marginBottom: 20 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 10,
+              color: '#059669',
+              fontFamily: 'monospace',
+              marginBottom: 6,
+              letterSpacing: '0.1em',
+              fontWeight: 600,
+            }}
+          >
+            비밀번호 {isSignUp && <span style={{ fontSize: 9, color: '#64748b' }}>(6자 이상)</span>}
+          </label>
+          <input
+            type="password"
+            placeholder="비밀번호"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onFocus={() => setFocusedInput('password')}
+            onBlur={() => setFocusedInput(null)}
+            required
+            style={{
+              width: '100%',
+              padding: '11px 13px',
+              background: '#f8fafc',
+              border: `1px solid ${focusedInput === 'password' ? '#10B981' : '#cbd5e1'}`,
+              boxShadow: focusedInput === 'password' ? '0 0 0 3px rgba(16, 185, 129, 0.15)' : 'none',
+              color: '#0f172a',
+              borderRadius: 6,
+              boxSizing: 'border-box',
+              fontSize: 12,
+              outline: 'none',
+              transition: 'all 0.2s ease',
+              fontFamily: 'monospace',
+            }}
+          />
+        </div>
+
+        {/* 제출 버튼 */}
+        <button
+          type="submit"
+          disabled={loading}
           style={{
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
-            borderRadius: 8,
-            padding: "14px",
+            width: '100%',
+            padding: '12px 0',
+            background: loading ? '#059669' : 'linear-gradient(135deg, #34d399 0%, #10B981 100%)',
+            border: 'none',
+            color: '#ffffff',
+            fontWeight: 800,
+            borderRadius: 6,
+            cursor: loading ? 'not-allowed' : 'pointer',
             fontSize: 12,
-            color: "#334155",
-            lineHeight: 1.6,
-            marginBottom: 18,
+            fontFamily: 'monospace',
+            letterSpacing: '0.1em',
+            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+            transition: 'all 0.2s ease',
+            marginBottom: 14,
           }}
         >
-          <p style={{ margin: 0, fontWeight: 600 }}>
-            📌 AI 생성 데이터 처리 안내
-          </p>
-          <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
-            <li>
-              <strong>처리 목적:</strong> 24장 이모티콘 이미지 자동 생성
-            </li>
-            <li>
-              <strong>처리 항목:</strong> 업로드 이미지, 입력 프롬프트
-            </li>
-            <li>
-              <strong>보유 기간:</strong> 생성 후 30일 보관 뒤 영구 파기
-            </li>
-            <li>
-              <strong>국외 위탁:</strong> 이미지 생성을 위해 해외 AI API로
-              암호화 전송 후 즉시 파기
-            </li>
-          </ul>
-        </div>
+          {loading ? '처리 중...' : isSignUp ? '회원가입 완료' : '로그인'}
+        </button>
 
-        {/* 체크박스 영역 */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            marginBottom: 24,
-          }}
-        >
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              cursor: "pointer",
-              fontWeight: 600,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={agreeRequired}
-              onChange={(e) => setAgreeRequired(e.target.checked)}
-            />
-            <span>[필수] 개인정보 수집 및 AI 생성 국외 위탁 동의</span>
-          </label>
-
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 13,
-              cursor: "pointer",
-              color: "#475569",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={agreeOptional}
-              onChange={(e) => setAgreeOptional(e.target.checked)}
-            />
-            <span>[선택] 서비스 품질 향상을 위한 생성 데이터 활용 동의</span>
-          </label>
-        </div>
-
-        {/* 버튼 영역 */}
-        <div style={{ display: "flex", gap: 10 }}>
+        {/* 모드 전환 버튼 */}
+        <div style={{ textAlign: 'center' }}>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setError('')
+            }}
             style={{
-              flex: 1,
-              padding: "12px 0",
-              background: "#f1f5f9",
-              border: "none",
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#475569",
-              cursor: "pointer",
+              background: 'none',
+              border: 'none',
+              color: '#059669',
+              fontSize: 11,
+              fontFamily: 'monospace',
+              cursor: 'pointer',
+              textDecoration: 'underline',
             }}
           >
-            취소
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!agreeRequired}
-            style={{
-              flex: 2,
-              padding: "12px 0",
-              background: agreeRequired
-                ? "linear-gradient(135deg, #34d399 0%, #10B981 100%)"
-                : "#94a3b8",
-              border: "none",
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 800,
-              color: "#ffffff",
-              cursor: agreeRequired ? "pointer" : "not-allowed",
-              boxShadow: agreeRequired
-                ? "0 4px 12px rgba(16, 185, 129, 0.3)"
-                : "none",
-            }}
-          >
-            동의하고 생성하기
+            {isSignUp ? '이미 계정이 있으신가요? 로그인' : '계정이 없으신가요? 회원가입'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
-  );
+  )
 }
