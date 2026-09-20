@@ -6,8 +6,8 @@ import { getAuth } from "firebase/auth";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 
-const api_Key = import.meta.env.FIREBASE_API_KEY;
-const firebase_domain = import.meta.env.FIREBASE_DOMAIN;
+const api_Key = process.env.FIREBASE_API_KEY ?? "";
+const firebase_domain = process.env.FIREBASE_DOMAIN ?? "";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
