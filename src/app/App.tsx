@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./firebase/config";
 import Login from "./Login";
+import TermsConsentModal from "./TermsConsentModal";
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
@@ -18,10 +19,16 @@ import {
   VARIANT_PROMPTS,
   DEFAULT_PROMPTS,
   Variant,
-  Prompts
+  Prompts,
 } from "./utils/imageGenerator";
 
-function Header({ userEmail }: { userEmail?: string | null }) {
+function Header({
+  userEmail,
+  onLoginClick,
+}: {
+  userEmail?: string | null;
+  onLoginClick: () => void;
+}) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-40">
       <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
@@ -47,26 +54,34 @@ function Header({ userEmail }: { userEmail?: string | null }) {
         </div>
 
         <div className="flex items-center gap-3">
-          {userEmail && (
-            <span className="text-xs text-muted-foreground font-mono hidden md:inline">
-              {userEmail}
-            </span>
+          {userEmail ? (
+            <>
+              <span className="text-xs text-muted-foreground font-mono hidden md:inline">
+                {userEmail}
+              </span>
+              <span
+                className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs"
+                style={{ fontWeight: 600 }}
+              >
+                Beta
+              </span>
+              <button
+                onClick={() => signOut(auth)}
+                className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
+                style={{ fontWeight: 500 }}
+              >
+                로그아웃
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onLoginClick}
+              className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs hover:opacity-90 transition-opacity font-mono"
+              style={{ fontWeight: 600 }}
+            >
+              로그인
+            </button>
           )}
-
-          <span
-            className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs"
-            style={{ fontWeight: 600 }}
-          >
-            Beta
-          </span>
-
-          <button
-            onClick={() => signOut(auth)}
-            className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
-            style={{ fontWeight: 500 }}
-          >
-            로그아웃
-          </button>
         </div>
       </div>
     </header>
@@ -114,14 +129,22 @@ type PendingGeneration = {
 };
 
 export default function App() {
-  // 인증 상태 관리
   const [user, setUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+  const [hasAgreedTerms, setHasAgreedTerms] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setAuthLoading(false);
+      if (currentUser) {
+        setIsLoginModalOpen(false);
+        // 사용자별 동의 여부 로컬 캐시 조회
+        const agreed = localStorage.getItem(`terms_agreed_${currentUser.uid}`);
+        if (agreed) setHasAgreedTerms(true);
+      } else {
+        setHasAgreedTerms(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -147,11 +170,7 @@ export default function App() {
       { length: 24 },
       (_, i) => VARIANT_PROMPTS[i] ?? DEFAULT_PROMPTS[i]
     )
-  )
-
-  // ------------------------------------------------------------------
-  // Canonical state
-  // ------------------------------------------------------------------
+  );
 
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
   const [approvedCanonicalId, setApprovedCanonicalId] =
@@ -194,24 +213,27 @@ export default function App() {
         next[slotIndex] = variant;
         return next;
       });
-      setSlotPrompts((prev) => prev.map((item, index) =>
-        index === slotIndex ? { id: variant.id, name: variant.name, prompt: "" } : item
-      ));
+      setSlotPrompts((prev) =>
+        prev.map((item, index) =>
+          index === slotIndex
+            ? { id: variant.id, name: variant.name, prompt: "" }
+            : item
+        )
+      );
     },
     []
   );
 
   const handlePromptChange = useCallback((slotIndex: number, prompt: string) => {
-    setSlotPrompts((prev) => prev.map((item, index) =>
-      index === slotIndex ? { ...item, prompt } : item
-    ));
+    setSlotPrompts((prev) =>
+      prev.map((item, index) =>
+        index === slotIndex ? { ...item, prompt } : item
+      )
+    );
   }, []);
 
   const runStickerGeneration = useCallback(
-    async (
-      approvedId: string,
-      request: PendingGeneration
-    ) => {
+    async (approvedId: string, request: PendingGeneration) => {
       setIsGenerating(true);
       setProgress(0);
 
@@ -248,8 +270,21 @@ export default function App() {
     [generatedImages]
   );
 
+  // 생성 실행 메인 함수
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
+      // 1. 로그인 여부 확인
+      if (!user) {
+        setIsLoginModalOpen(true);
+        return;
+      }
+
+      // 2. 약관 및 개인정보 처리 동의 여부 확인
+      if (!hasAgreedTerms) {
+        setIsTermsModalOpen(true);
+        return;
+      }
+
       if (!uploadedImage || !title.trim()) return;
 
       const isPartial = !!indices && indices.length > 0;
@@ -271,9 +306,12 @@ export default function App() {
       const request: PendingGeneration = {
         indices: targetIndices,
         variantAssignments,
-        userPrompts: Object.fromEntries(targetIndices.map((index) => [
-          index, slotPrompts[index - 1]?.prompt.trim() ?? "",
-        ])),
+        userPrompts: Object.fromEntries(
+          targetIndices.map((index) => [
+            index,
+            slotPrompts[index - 1]?.prompt.trim() ?? "",
+          ])
+        ),
         isPartial,
       };
 
@@ -321,6 +359,8 @@ export default function App() {
       }
     },
     [
+      user,
+      hasAgreedTerms,
       uploadedImage,
       title,
       description,
@@ -332,6 +372,23 @@ export default function App() {
       runStickerGeneration,
     ]
   );
+
+  // 약관 동의 확인 핸들러
+  const handleTermsConfirm = (allowAiTraining: boolean) => {
+    setHasAgreedTerms(true);
+    setIsTermsModalOpen(false);
+
+    if (user?.uid) {
+      localStorage.setItem(`terms_agreed_${user.uid}`, "true");
+      localStorage.setItem(
+        `terms_ai_training_${user.uid}`,
+        allowAiTraining ? "true" : "false"
+      );
+    }
+
+    // 동의 완료 즉시 이모티콘 생성 진행
+    handleGenerate();
+  };
 
   const handleApproveCanonical = useCallback(async () => {
     if (!canonicalId || canonicalStatus !== "ready") return;
@@ -375,7 +432,9 @@ export default function App() {
         setCanonicalImage(null);
         const controller = new AbortController();
         generationController.current = controller;
-        const result = await regenerateCanonical(canonicalId, editRequest, { signal: controller.signal });
+        const result = await regenerateCanonical(canonicalId, editRequest, {
+          signal: controller.signal,
+        });
         if (controller.signal.aborted) return;
         setCanonicalImage(result.image ?? null);
         setCanonicalStatus(result.status);
@@ -401,49 +460,29 @@ export default function App() {
     pendingGenerationRef.current = null;
   }, [canonicalBusy, canonicalStatus]);
 
-  // 인증 상태 확인 중일 때 로딩 화면 표시
-  if (authLoading) {
-    return (
-      <div style={{ height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000', color: '#10B981', fontFamily: 'monospace' }}>
-        시스템 로딩 중...
-      </div>
-    );
-  }
-
-  // 로그인하지 않은 경우 Login 컴포넌트 렌더링
-  if (!user) {
-    return <Login />;
-  }
-
   const isReady = !!uploadedImage && !!title.trim();
-  const uiBusy = isGenerating || canonicalBusy || (canonicalPanelOpen && canonicalStatus === "generating");
+  const uiBusy =
+    isGenerating ||
+    canonicalBusy ||
+    (canonicalPanelOpen && canonicalStatus === "generating");
 
   return (
     <div className="min-h-screen bg-background">
-      <Header userEmail={user?.email} />
+      <Header
+        userEmail={user?.email}
+        onLoginClick={() => setIsLoginModalOpen(true)}
+      />
 
-      {/* Step indicators */}
+      {/* 단계 인디케이터 */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5">
         <div className="flex items-center gap-2 flex-wrap">
-          <StepBadge
-            step={1}
-            label="이미지 업로드"
-            done={!!uploadedImage}
-          />
+          <StepBadge step={1} label="이미지 업로드" done={!!uploadedImage} />
           <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge
-            step={2}
-            label="정보 입력"
-            done={!!title.trim()}
-          />
+          <StepBadge step={2} label="정보 입력" done={!!title.trim()} />
           <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge
-            step={3}
-            label="캐릭터 확인"
-            done={!!approvedCanonicalId}
-          />
+          <StepBadge step={3} label="캐릭터 확인" done={!!approvedCanonicalId} />
           <span className="text-border text-sm mx-0.5">→</span>
 
           <StepBadge
@@ -466,9 +505,7 @@ export default function App() {
             uploadedImage={uploadedImage}
             setUploadedImage={(value) => {
               setUploadedImage(value);
-
               invalidateCanonical();
-
               if (!value) {
                 setGeneratedImages([]);
                 setProgress(0);
@@ -512,7 +549,58 @@ export default function App() {
         onRegenerate={handleRegenerateCanonical}
         onClose={handleCloseCanonicalPanel}
       />
+
+      {/* 1. 로그인 모달 */}
+      {isLoginModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={() => setIsLoginModalOpen(false)}
+        >
+          <div
+            style={{ position: "relative" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsLoginModalOpen(false)}
+              style={{
+                position: "absolute",
+                top: 14,
+                right: 14,
+                zIndex: 10,
+                background: "transparent",
+                border: "none",
+                fontSize: "16px",
+                color: "#71717a",
+                cursor: "pointer",
+                padding: "4px 8px",
+              }}
+            >
+              ✕
+            </button>
+            <Login
+              onSuccess={() => {
+                setIsLoginModalOpen(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 2. 약관 및 개인정보 처리방침 동의 모달 */}
+      <TermsConsentModal
+        isOpen={isTermsModalOpen}
+        onClose={() => setIsTermsModalOpen(false)}
+        onConfirm={handleTermsConfirm}
+      />
     </div>
   );
 }
-

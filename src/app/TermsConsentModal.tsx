@@ -21,14 +21,11 @@ export default function Login({ onSuccess }: LoginProps) {
 
     try {
       if (isSignUp) {
-        // 회원가입 실행
         await createUserWithEmailAndPassword(auth, email, password)
       } else {
-        // 로그인 실행
         await signInWithEmailAndPassword(auth, email, password)
       }
 
-      // 로그인/회원가입 성공 즉시 팝업 닫기 트리거
       if (onSuccess) {
         onSuccess()
       }
@@ -219,7 +216,7 @@ export default function Login({ onSuccess }: LoginProps) {
           {loading ? '처리 중...' : isSignUp ? '회원가입 완료' : '로그인'}
         </button>
 
-        {/* 전환 링크 버튼 */}
+        {/* 모드 전환 버튼 */}
         <div style={{ textAlign: 'center' }}>
           <button
             type="button"
