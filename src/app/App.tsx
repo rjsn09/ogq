@@ -21,7 +21,13 @@ import {
   Prompts
 } from "./utils/imageGenerator";
 
-function Header({ userEmail }: { userEmail?: string | null }) {
+function Header({
+  userEmail,
+  onLoginClick,
+}: {
+  userEmail?: string | null;
+  onLoginClick: () => void;
+}) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-40">
       <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
@@ -47,26 +53,34 @@ function Header({ userEmail }: { userEmail?: string | null }) {
         </div>
 
         <div className="flex items-center gap-3">
-          {userEmail && (
-            <span className="text-xs text-muted-foreground font-mono hidden md:inline">
-              {userEmail}
-            </span>
+          {userEmail ? (
+            <>
+              <span className="text-xs text-muted-foreground font-mono hidden md:inline">
+                {userEmail}
+              </span>
+              <span
+                className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs"
+                style={{ fontWeight: 600 }}
+              >
+                Beta
+              </span>
+              <button
+                onClick={() => signOut(auth)}
+                className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
+                style={{ fontWeight: 500 }}
+              >
+                로그아웃
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onLoginClick}
+              className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs hover:opacity-90 transition-opacity font-mono"
+              style={{ fontWeight: 600 }}
+            >
+              로그인
+            </button>
           )}
-
-          <span
-            className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs"
-            style={{ fontWeight: 600 }}
-          >
-            Beta
-          </span>
-
-          <button
-            onClick={() => signOut(auth)}
-            className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
-            style={{ fontWeight: 500 }}
-          >
-            로그아웃
-          </button>
         </div>
       </div>
     </header>
@@ -117,6 +131,7 @@ export default function App() {
   // 인증 상태 관리
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false); // 👈 로그인 모달 제어 상태 추가
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -147,11 +162,7 @@ export default function App() {
       { length: 24 },
       (_, i) => VARIANT_PROMPTS[i] ?? DEFAULT_PROMPTS[i]
     )
-  )
-
-  // ------------------------------------------------------------------
-  // Canonical state
-  // ------------------------------------------------------------------
+  );
 
   const [canonicalId, setCanonicalId] = useState<string | null>(null);
   const [approvedCanonicalId, setApprovedCanonicalId] =
@@ -194,17 +205,21 @@ export default function App() {
         next[slotIndex] = variant;
         return next;
       });
-      setSlotPrompts((prev) => prev.map((item, index) =>
-        index === slotIndex ? { id: variant.id, name: variant.name, prompt: "" } : item
-      ));
+      setSlotPrompts((prev) =>
+        prev.map((item, index) =>
+          index === slotIndex ? { id: variant.id, name: variant.name, prompt: "" } : item
+        )
+      );
     },
     []
   );
 
   const handlePromptChange = useCallback((slotIndex: number, prompt: string) => {
-    setSlotPrompts((prev) => prev.map((item, index) =>
-      index === slotIndex ? { ...item, prompt } : item
-    ));
+    setSlotPrompts((prev) =>
+      prev.map((item, index) =>
+        index === slotIndex ? { ...item, prompt } : item
+      )
+    );
   }, []);
 
   const runStickerGeneration = useCallback(
@@ -248,8 +263,15 @@ export default function App() {
     [generatedImages]
   );
 
+  // 👈 생성 버튼 클릭 시 로그인 체크 추가
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
+      // 1. 로그인이 안 되어 있으면 모달 열고 중단
+      if (!user) {
+        setIsLoginModalOpen(true);
+        return;
+      }
+
       if (!uploadedImage || !title.trim()) return;
 
       const isPartial = !!indices && indices.length > 0;
@@ -271,9 +293,12 @@ export default function App() {
       const request: PendingGeneration = {
         indices: targetIndices,
         variantAssignments,
-        userPrompts: Object.fromEntries(targetIndices.map((index) => [
-          index, slotPrompts[index - 1]?.prompt.trim() ?? "",
-        ])),
+        userPrompts: Object.fromEntries(
+          targetIndices.map((index) => [
+            index,
+            slotPrompts[index - 1]?.prompt.trim() ?? "",
+          ])
+        ),
         isPartial,
       };
 
@@ -321,6 +346,7 @@ export default function App() {
       }
     },
     [
+      user, // 👈 의존성 추가
       uploadedImage,
       title,
       description,
@@ -375,7 +401,9 @@ export default function App() {
         setCanonicalImage(null);
         const controller = new AbortController();
         generationController.current = controller;
-        const result = await regenerateCanonical(canonicalId, editRequest, { signal: controller.signal });
+        const result = await regenerateCanonical(canonicalId, editRequest, {
+          signal: controller.signal,
+        });
         if (controller.signal.aborted) return;
         setCanonicalImage(result.image ?? null);
         setCanonicalStatus(result.status);
@@ -401,26 +429,20 @@ export default function App() {
     pendingGenerationRef.current = null;
   }, [canonicalBusy, canonicalStatus]);
 
-  // 인증 상태 확인 중일 때 로딩 화면 표시
-  if (authLoading) {
-    return (
-      <div style={{ height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000', color: '#10B981', fontFamily: 'monospace' }}>
-        시스템 로딩 중...
-      </div>
-    );
-  }
-
-  // 로그인하지 않은 경우 Login 컴포넌트 렌더링
-  if (!user) {
-    return <Login />;
-  }
+  // ❌ [삭제됨]: authLoading 시 화면 전체를 막던 코드와 !user 일 때 가로채던 코드 제거
 
   const isReady = !!uploadedImage && !!title.trim();
-  const uiBusy = isGenerating || canonicalBusy || (canonicalPanelOpen && canonicalStatus === "generating");
+  const uiBusy =
+    isGenerating ||
+    canonicalBusy ||
+    (canonicalPanelOpen && canonicalStatus === "generating");
 
   return (
     <div className="min-h-screen bg-background">
-      <Header userEmail={user?.email} />
+      <Header
+        userEmail={user?.email}
+        onLoginClick={() => setIsLoginModalOpen(true)}
+      />
 
       {/* Step indicators */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5">
@@ -512,7 +534,47 @@ export default function App() {
         onRegenerate={handleRegenerateCanonical}
         onClose={handleCloseCanonicalPanel}
       />
+
+      {/* 👈 모달로 띄워지는 로그인 화면 */}
+      {isLoginModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+          onClick={() => setIsLoginModalOpen(false)}
+        >
+          <div
+            style={{ position: "relative" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 닫기 버튼 */}
+            <button
+              onClick={() => setIsLoginModalOpen(false)}
+              style={{
+                position: "absolute",
+                top: 14,
+                right: 14,
+                zIndex: 10,
+                background: "transparent",
+                border: "none",
+                fontSize: "18px",
+                color: "#71717a",
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+            <Login />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
