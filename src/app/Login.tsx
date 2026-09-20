@@ -2,13 +2,21 @@ import React, { useState } from 'react'
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from './firebase/config'
 
-export default function Login() {
+interface LoginModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSuccess?: () => void
+}
+
+export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [isSignUp, setIsSignUp] = useState(false) // 로그인 / 회원가입 모드 전환 상태
+  const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null)
+
+  if (!isOpen) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -17,12 +25,13 @@ export default function Login() {
 
     try {
       if (isSignUp) {
-        // 회원가입 실행
         await createUserWithEmailAndPassword(auth, email, password)
       } else {
-        // 로그인 실행
         await signInWithEmailAndPassword(auth, email, password)
       }
+      // 성공 시 모달 닫기 및 후속 동작 실행
+      if (onSuccess) onSuccess()
+      onClose()
     } catch (err: any) {
       console.error(err)
       if (isSignUp) {
@@ -38,62 +47,69 @@ export default function Login() {
   return (
     <div
       style={{
-        height: '100vh',
-        width: '100vw',
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#ffffff',
-        color: '#18181b',
-        position: 'relative',
-        overflow: 'hidden',
+        zIndex: 9999,
         userSelect: 'none',
       }}
+      onClick={onClose} // 바깥 영역 클릭 시 닫기
     >
-      {/* 상단 부드러운 에메랄드 빛 조명 효과 */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 320,
-          height: '100%',
-          background: 'linear-gradient(180deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.01) 80%, transparent 100%)',
-          clipPath: 'polygon(30% 0%, 70% 0%, 100% 100%, 0% 100%)',
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* 로그인 / 회원가입 폼 박스 */}
+      {/* 모달 내부 박스 (바깥 클릭 이벤트 전파 방지) */}
       <form
         onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
           width: 340,
-          padding: '40px 32px',
+          padding: '40px 32px 32px 32px',
           background: '#ffffff',
           border: '1px solid #e4e4e7',
-          borderRadius: 12,
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.06), 0 0 20px rgba(16, 185, 129, 0.05)',
+          borderRadius: 16,
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
           display: 'flex',
           flexDirection: 'column',
           zIndex: 2,
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+        {/* 우측 상단 닫기(X) 버튼 */}
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: 16,
+            right: 16,
+            background: 'transparent',
+            border: 'none',
+            fontSize: 18,
+            color: '#71717a',
+            cursor: 'pointer',
+            padding: '4px 8px',
+          }}
+        >
+          ✕
+        </button>
+
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div
             style={{
-              fontSize: 34,
+              fontSize: 28,
               fontWeight: 900,
-              letterSpacing: '0.1em',
+              letterSpacing: '0.05em',
               fontFamily: 'Inter, sans-serif',
-              whiteSpace: 'nowrap',
               color: '#09090b',
             }}
           >
             {isSignUp ? '회원가입' : '로그인'}
           </div>
+          <p style={{ margin: '6px 0 0 0', fontSize: 12, color: '#71717a' }}>
+            이모티콘을 생성하려면 로그인이 필요합니다.
+          </p>
         </div>
 
         {error && (
@@ -105,7 +121,7 @@ export default function Login() {
               background: 'rgba(239, 68, 68, 0.06)',
               border: '1px solid rgba(239, 68, 68, 0.2)',
               borderRadius: 6,
-              marginBottom: 18,
+              marginBottom: 16,
               fontFamily: 'monospace',
             }}
           >
@@ -113,8 +129,8 @@ export default function Login() {
           </div>
         )}
 
-        {/* 이메일 입력창 */}
-        <div style={{ marginBottom: 16 }}>
+        {/* 이메일 입력 */}
+        <div style={{ marginBottom: 14 }}>
           <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
             아이디 (이메일)
           </label>
@@ -128,7 +144,7 @@ export default function Login() {
             required
             style={{
               width: '100%',
-              padding: '12px 14px',
+              padding: '11px 13px',
               background: '#f8fafc',
               border: `1px solid ${focusedInput === 'email' ? '#10B981' : '#cbd5e1'}`,
               boxShadow: focusedInput === 'email' ? '0 0 0 3px rgba(16, 185, 129, 0.15)' : 'none',
@@ -143,8 +159,8 @@ export default function Login() {
           />
         </div>
 
-        {/* 비밀번호 입력창 */}
-        <div style={{ marginBottom: 22 }}>
+        {/* 비밀번호 입력 */}
+        <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
             비밀번호 {isSignUp && <span style={{ fontSize: 9, color: '#64748b' }}>(6자 이상)</span>}
           </label>
@@ -158,7 +174,7 @@ export default function Login() {
             required
             style={{
               width: '100%',
-              padding: '12px 14px',
+              padding: '11px 13px',
               background: '#f8fafc',
               border: `1px solid ${focusedInput === 'password' ? '#10B981' : '#cbd5e1'}`,
               boxShadow: focusedInput === 'password' ? '0 0 0 3px rgba(16, 185, 129, 0.15)' : 'none',
@@ -179,7 +195,7 @@ export default function Login() {
           disabled={loading}
           style={{
             width: '100%',
-            padding: '13px 0',
+            padding: '12px 0',
             background: loading ? '#059669' : 'linear-gradient(135deg, #34d399 0%, #10B981 100%)',
             border: 'none',
             color: '#ffffff',
@@ -191,13 +207,13 @@ export default function Login() {
             letterSpacing: '0.1em',
             boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
             transition: 'all 0.2s ease',
-            marginBottom: 16,
+            marginBottom: 14,
           }}
         >
           {loading ? '처리 중...' : isSignUp ? '회원가입 완료' : '로그인'}
         </button>
 
-        {/* 로그인 <-> 회원가입 전환 버튼 */}
+        {/* 전환 버튼 */}
         <div style={{ textAlign: 'center' }}>
           <button
             type="button"
