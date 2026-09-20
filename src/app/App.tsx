@@ -1,563 +1,189 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "./firebase/config";
-import Login from "./Login";
-import InputPanel from "./components/InputPanel";
-import GeneratedGrid from "./components/GeneratedGrid";
-import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
-import {
-  approveCanonical,
-  createCanonical,
-  generateOGQImagesFromCanonical,
-  regenerateCanonical,
-  type CanonicalStatusValue,
-} from "./lib/ogqGenerator";
-import {
-  VARIANT_CATALOG,
-  DEFAULT_VARIANTS,
-  VARIANT_PROMPTS,
-  DEFAULT_PROMPTS,
-  Variant,
-  Prompts,
-} from "./utils/imageGenerator";
+import React, { useState } from "react";
 
-function Header({
-  userEmail,
-  onLoginClick,
-}: {
-  userEmail?: string | null;
-  onLoginClick: () => void;
-}) {
-  return (
-    <header className="bg-card border-b border-border sticky top-0 z-40">
-      <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl overflow-hidden shadow-sm shadow-primary/30">
-            <img
-              src="/ogqIcon.png"
-              className="w-full h-full object-cover"
-              alt="OGQ"
-            />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span
-              className="text-foreground"
-              style={{ fontWeight: 700, fontSize: "1rem" }}
-            >
-              이모티콘 생성기
-            </span>
-            <span className="text-muted-foreground text-xs hidden sm:inline">
-              네이버 OGQ 마켓 · 24장 자동 생성
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {userEmail ? (
-            <>
-              <span className="text-xs text-muted-foreground font-mono hidden md:inline">
-                {userEmail}
-              </span>
-              <span
-                className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs"
-                style={{ fontWeight: 600 }}
-              >
-                Beta
-              </span>
-              <button
-                onClick={() => signOut(auth)}
-                className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
-                style={{ fontWeight: 500 }}
-              >
-                로그아웃
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={onLoginClick}
-              className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs hover:opacity-90 transition-opacity font-mono"
-              style={{ fontWeight: 600 }}
-            >
-              로그인
-            </button>
-          )}
-        </div>
-      </div>
-    </header>
-  );
+interface TermsConsentModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (allowAiTraining: boolean) => void;
 }
 
-function StepBadge({
-  step,
-  label,
-  done,
-}: {
-  step: number;
-  label: string;
-  done: boolean;
-}) {
+export default function TermsConsentModal({
+  isOpen,
+  onClose,
+  onConfirm,
+}: TermsConsentModalProps) {
+  const [agreeRequired, setAgreeRequired] = useState(false);
+  const [agreeOptional, setAgreeOptional] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!agreeRequired) {
+      alert("서비스 이용을 위해 필수 항목에 동의해 주세요.");
+      return;
+    }
+    onConfirm(agreeOptional);
+  };
+
   return (
     <div
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-colors ${
-        done
-          ? "bg-secondary border-primary/30 text-secondary-foreground"
-          : "bg-card border-border text-muted-foreground"
-      }`}
-      style={{ fontWeight: 500 }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 9999,
+        userSelect: "none",
+      }}
+      onClick={onClose}
     >
-      <span
-        className={`w-4 h-4 rounded-full flex items-center justify-center ${
-          done
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-muted-foreground"
-        }`}
-        style={{ fontWeight: 700, fontSize: "10px" }}
+      <div
+        style={{
+          position: "relative",
+          width: 380,
+          padding: "32px 28px",
+          background: "#ffffff",
+          borderRadius: 16,
+          border: "1px solid #e4e4e7",
+          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
+        }}
+        onClick={(e) => e.stopPropagation()}
       >
-        {done ? "✓" : step}
-      </span>
-      {label}
-    </div>
-  );
-}
-
-type PendingGeneration = {
-  indices: number[];
-  variantAssignments: Record<number, string>;
-  userPrompts: Record<number, string>;
-  isPartial: boolean;
-};
-
-export default function App() {
-  const [user, setUser] = useState<any>(null);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        setIsLoginModalOpen(false);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("캐릭터");
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState<string[]>([]);
-  const [progress, setProgress] = useState(0);
-
-  const [slotVariants, setSlotVariants] = useState<Variant[]>(
-    Array.from(
-      { length: 24 },
-      (_, i) => VARIANT_CATALOG[i] ?? DEFAULT_VARIANTS[i]
-    )
-  );
-  const [slotPrompts, setSlotPrompts] = useState<Prompts[]>(
-    Array.from(
-      { length: 24 },
-      (_, i) => VARIANT_PROMPTS[i] ?? DEFAULT_PROMPTS[i]
-    )
-  );
-
-  const [canonicalId, setCanonicalId] = useState<string | null>(null);
-  const [approvedCanonicalId, setApprovedCanonicalId] =
-    useState<string | null>(null);
-
-  const [canonicalPanelOpen, setCanonicalPanelOpen] = useState(false);
-  const [canonicalStatus, setCanonicalStatus] =
-    useState<CanonicalStatusValue>("generating");
-  const [canonicalImage, setCanonicalImage] = useState<string | null>(null);
-  const [canonicalError, setCanonicalError] = useState<string | null>(null);
-  const [canonicalBusy, setCanonicalBusy] = useState(false);
-
-  const generationController = useRef<AbortController | null>(null);
-  useEffect(() => () => generationController.current?.abort(), []);
-
-  const pendingGenerationRef = useRef<PendingGeneration | null>(null);
-
-  const invalidateCanonical = useCallback(() => {
-    generationController.current?.abort();
-    setCanonicalBusy(false);
-    setCanonicalId(null);
-    setApprovedCanonicalId(null);
-    setCanonicalImage(null);
-    setCanonicalError(null);
-    setCanonicalPanelOpen(false);
-    pendingGenerationRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    invalidateCanonical();
-  }, [description, invalidateCanonical]);
-
-  const handleVariantChange = useCallback(
-    (slotIndex: number, variantId: string) => {
-      const variant = VARIANT_CATALOG.find((v) => v.id === variantId);
-      if (!variant) return;
-
-      setSlotVariants((prev) => {
-        const next = [...prev];
-        next[slotIndex] = variant;
-        return next;
-      });
-      setSlotPrompts((prev) =>
-        prev.map((item, index) =>
-          index === slotIndex
-            ? { id: variant.id, name: variant.name, prompt: "" }
-            : item
-        )
-      );
-    },
-    []
-  );
-
-  const handlePromptChange = useCallback((slotIndex: number, prompt: string) => {
-    setSlotPrompts((prev) =>
-      prev.map((item, index) =>
-        index === slotIndex ? { ...item, prompt } : item
-      )
-    );
-  }, []);
-
-  const runStickerGeneration = useCallback(
-    async (approvedId: string, request: PendingGeneration) => {
-      setIsGenerating(true);
-      setProgress(0);
-
-      if (!request.isPartial) {
-        setGeneratedImages([]);
-      }
-
-      const controller = new AbortController();
-      generationController.current = controller;
-      try {
-        await generateOGQImagesFromCanonical(
-          approvedId,
-          (count, images) => {
-            setProgress(count);
-            setGeneratedImages(images);
-          },
-          request.indices,
-          request.variantAssignments,
-          request.isPartial ? generatedImages : undefined,
-          { signal: controller.signal, userPrompts: request.userPrompts }
-        );
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        console.error("이모티콘 생성 실패:", err);
-        alert(
-          `생성 중 오류가 발생했습니다: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        );
-      } finally {
-        setIsGenerating(false);
-      }
-    },
-    [generatedImages]
-  );
-
-  const handleGenerate = useCallback(
-    async (indices?: number[]) => {
-      // 1. 로그인이 안 되어 있으면 모달 열고 생성 중단
-      if (!user) {
-        setIsLoginModalOpen(true);
-        return;
-      }
-
-      if (!uploadedImage || !title.trim()) return;
-
-      const isPartial = !!indices && indices.length > 0;
-
-      const targetIndices =
-        indices && indices.length > 0
-          ? indices
-          : Array.from({ length: 24 }, (_, i) => i + 1);
-
-      const variantAssignments: Record<number, string> =
-        targetIndices.reduce((acc, idx1based) => {
-          acc[idx1based] =
-            slotVariants[idx1based - 1]?.name ??
-            DEFAULT_VARIANTS[idx1based - 1]?.name ??
-            `이모티콘 ${idx1based}`;
-          return acc;
-        }, {} as Record<number, string>);
-
-      const request: PendingGeneration = {
-        indices: targetIndices,
-        variantAssignments,
-        userPrompts: Object.fromEntries(
-          targetIndices.map((index) => [
-            index,
-            slotPrompts[index - 1]?.prompt.trim() ?? "",
-          ])
-        ),
-        isPartial,
-      };
-
-      if (approvedCanonicalId) {
-        await runStickerGeneration(approvedCanonicalId, request);
-        return;
-      }
-
-      pendingGenerationRef.current = request;
-      setCanonicalPanelOpen(true);
-
-      if (canonicalId && canonicalStatus === "ready") {
-        return;
-      }
-
-      setCanonicalStatus("generating");
-      setCanonicalImage(null);
-      setCanonicalError(null);
-      setCanonicalBusy(true);
-
-      const controller = new AbortController();
-      generationController.current?.abort();
-      generationController.current = controller;
-      try {
-        const result = await createCanonical(
-          uploadedImage,
-          description || undefined,
-          { signal: controller.signal }
-        );
-
-        if (controller.signal.aborted) return;
-        setCanonicalId(result.canonical_id);
-        setCanonicalImage(result.image ?? null);
-        setCanonicalStatus(result.status);
-      } catch (err) {
-        if (generationController.current?.signal.aborted) return;
-        setCanonicalStatus("error");
-        setCanonicalError(
-          err instanceof Error
-            ? err.message
-            : "Canonical 생성 요청에 실패했습니다."
-        );
-      } finally {
-        setCanonicalBusy(false);
-      }
-    },
-    [
-      user,
-      uploadedImage,
-      title,
-      description,
-      slotVariants,
-      slotPrompts,
-      approvedCanonicalId,
-      canonicalId,
-      canonicalStatus,
-      runStickerGeneration,
-    ]
-  );
-
-  const handleApproveCanonical = useCallback(async () => {
-    if (!canonicalId || canonicalStatus !== "ready") return;
-
-    setCanonicalBusy(true);
-    setCanonicalError(null);
-
-    try {
-      await approveCanonical(canonicalId);
-
-      setApprovedCanonicalId(canonicalId);
-      setCanonicalStatus("approved");
-      setCanonicalPanelOpen(false);
-
-      const pending = pendingGenerationRef.current;
-      pendingGenerationRef.current = null;
-
-      if (pending) {
-        await runStickerGeneration(canonicalId, pending);
-      }
-    } catch (err) {
-      setCanonicalError(
-        err instanceof Error
-          ? err.message
-          : "Canonical 승인에 실패했습니다."
-      );
-    } finally {
-      setCanonicalBusy(false);
-    }
-  }, [canonicalId, canonicalStatus, runStickerGeneration]);
-
-  const handleRegenerateCanonical = useCallback(
-    async (editRequest: string) => {
-      if (!canonicalId) return;
-
-      setCanonicalBusy(true);
-      setCanonicalError(null);
-
-      try {
-        setCanonicalStatus("generating");
-        setCanonicalImage(null);
-        const controller = new AbortController();
-        generationController.current = controller;
-        const result = await regenerateCanonical(canonicalId, editRequest, {
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        setCanonicalImage(result.image ?? null);
-        setCanonicalStatus(result.status);
-      } catch (err) {
-        if (generationController.current?.signal.aborted) return;
-        setCanonicalStatus("error");
-        setCanonicalError(
-          err instanceof Error
-            ? err.message
-            : "Canonical 재생성 요청에 실패했습니다."
-        );
-      } finally {
-        setCanonicalBusy(false);
-      }
-    },
-    [canonicalId]
-  );
-
-  const handleCloseCanonicalPanel = useCallback(() => {
-    if (canonicalStatus === "generating" || canonicalBusy) return;
-
-    setCanonicalPanelOpen(false);
-    pendingGenerationRef.current = null;
-  }, [canonicalBusy, canonicalStatus]);
-
-  const isReady = !!uploadedImage && !!title.trim();
-  const uiBusy =
-    isGenerating ||
-    canonicalBusy ||
-    (canonicalPanelOpen && canonicalStatus === "generating");
-
-  return (
-    <div className="min-h-screen bg-background">
-      <Header
-        userEmail={user?.email}
-        onLoginClick={() => setIsLoginModalOpen(true)}
-      />
-
-      {/* 단계 인디케이터 */}
-      <div className="max-w-[1400px] mx-auto px-6 pt-5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <StepBadge step={1} label="이미지 업로드" done={!!uploadedImage} />
-          <span className="text-border text-sm mx-0.5">→</span>
-
-          <StepBadge step={2} label="정보 입력" done={!!title.trim()} />
-          <span className="text-border text-sm mx-0.5">→</span>
-
-          <StepBadge step={3} label="캐릭터 확인" done={!!approvedCanonicalId} />
-          <span className="text-border text-sm mx-0.5">→</span>
-
-          <StepBadge
-            step={4}
-            label="24장 생성"
-            done={generatedImages.filter(Boolean).length === 24}
-          />
-          <span className="text-border text-sm mx-0.5">→</span>
-
-          <StepBadge step={5} label="다운로드" done={false} />
-        </div>
-      </div>
-
-      <main className="max-w-[1400px] mx-auto px-6 py-5">
-        <div
-          className="grid gap-6"
-          style={{ gridTemplateColumns: "420px 1fr" }}
-        >
-          <InputPanel
-            uploadedImage={uploadedImage}
-            setUploadedImage={(value) => {
-              setUploadedImage(value);
-              invalidateCanonical();
-              if (!value) {
-                setGeneratedImages([]);
-                setProgress(0);
-              }
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <h3
+            style={{
+              fontSize: 20,
+              fontWeight: 800,
+              margin: 0,
+              color: "#09090b",
+              letterSpacing: "-0.02em",
             }}
-            title={title}
-            setTitle={setTitle}
-            tags={tags}
-            setTags={setTags}
-            description={description}
-            setDescription={setDescription}
-            category={category}
-            setCategory={setCategory}
-            onGenerate={handleGenerate}
-            isGenerating={uiBusy}
-            isReady={isReady}
-          />
-
-          <GeneratedGrid
-            images={generatedImages}
-            slotVariants={slotVariants}
-            slotPrompts={slotPrompts}
-            onPromptChange={handlePromptChange}
-            onVariantChange={handleVariantChange}
-            isGenerating={uiBusy}
-            progress={progress}
-            title={title}
-            onGenerate={handleGenerate}
-            isReady={isReady}
-          />
+          >
+            서비스 이용 및 데이터 처리 동의
+          </h3>
+          <p style={{ margin: "6px 0 0 0", fontSize: 12, color: "#71717a" }}>
+            이모티콘 생성을 위해 아래 개인정보 처리 방침을 확인해 주세요.
+          </p>
         </div>
-      </main>
 
-      <CanonicalConfirmPanel
-        open={canonicalPanelOpen}
-        status={canonicalStatus}
-        image={canonicalImage}
-        error={canonicalError}
-        busy={canonicalBusy}
-        onApprove={handleApproveCanonical}
-        onRegenerate={handleRegenerateCanonical}
-        onClose={handleCloseCanonicalPanel}
-      />
-
-      {/* 로그인 모달: 배경 블러 없이 깔끔한 반투명 오버레이 */}
-      {isLoginModalOpen && (
+        {/* 간이형 핵심 고지 박스 */}
         <div
           style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 8,
+            padding: "14px",
+            fontSize: 11,
+            color: "#334155",
+            lineHeight: 1.6,
+            marginBottom: 20,
+            fontFamily: "monospace",
           }}
-          onClick={() => setIsLoginModalOpen(false)}
         >
-          <div
-            style={{ position: "relative" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* 닫기 X 버튼 */}
-            <button
-              type="button"
-              onClick={() => setIsLoginModalOpen(false)}
-              style={{
-                position: "absolute",
-                top: 14,
-                right: 14,
-                zIndex: 10,
-                background: "transparent",
-                border: "none",
-                fontSize: "16px",
-                color: "#71717a",
-                cursor: "pointer",
-                padding: "4px 8px",
-              }}
-            >
-              ✕
-            </button>
-            <Login onSuccess={() => setIsLoginModalOpen(false)} />
+          <div style={{ fontWeight: 700, marginBottom: 4, color: "#059669" }}>
+            📌 AI 생성 데이터 처리 안내
           </div>
+          <div>• <strong>목적:</strong> 24장 이모티콘 이미지 자동 생성</div>
+          <div>• <strong>항목:</strong> 업로드 이미지, 입력 텍스트 프롬프트</div>
+          <div>• <strong>보유 기간:</strong> 생성 완료 후 30일 보관 뒤 영구 파기</div>
+          <div>• <strong>국외 위탁:</strong> 이미지 생성을 위해 해외 AI 모델 API로 암호화 전송 후 즉시 파기</div>
         </div>
-      )}
+
+        {/* 체크박스 영역 */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            marginBottom: 24,
+            fontSize: 12,
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontWeight: 600,
+              color: "#09090b",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={agreeRequired}
+              onChange={(e) => setAgreeRequired(e.target.checked)}
+              style={{ accentColor: "#10B981" }}
+            />
+            <span>[필수] 개인정보 수집·이용 및 국외 위탁 동의</span>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              color: "#64748b",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={agreeOptional}
+              onChange={(e) => setAgreeOptional(e.target.checked)}
+              style={{ accentColor: "#10B981" }}
+            />
+            <span>[선택] 품질 개선을 위한 생성 데이터 활용 동의</span>
+          </label>
+        </div>
+
+        {/* 버튼 영역 */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              flex: 1,
+              padding: "11px 0",
+              background: "#f1f5f9",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "#475569",
+              cursor: "pointer",
+            }}
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!agreeRequired}
+            style={{
+              flex: 2,
+              padding: "11px 0",
+              background: agreeRequired
+                ? "linear-gradient(135deg, #34d399 0%, #10B981 100%)"
+                : "#94a3b8",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#ffffff",
+              cursor: agreeRequired ? "pointer" : "not-allowed",
+              boxShadow: agreeRequired
+                ? "0 4px 12px rgba(16, 185, 129, 0.3)"
+                : "none",
+              transition: "all 0.2s ease",
+            }}
+          >
+            동의하고 생성하기
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
