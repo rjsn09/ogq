@@ -18,7 +18,7 @@ import {
   VARIANT_PROMPTS,
   DEFAULT_PROMPTS,
   Variant,
-  Prompts
+  Prompts,
 } from "./utils/imageGenerator";
 
 function Header({
@@ -128,15 +128,15 @@ type PendingGeneration = {
 };
 
 export default function App() {
-  // 인증 상태 관리
   const [user, setUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false); // 👈 로그인 모달 제어 상태 추가
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setAuthLoading(false);
+      if (currentUser) {
+        setIsLoginModalOpen(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -207,7 +207,9 @@ export default function App() {
       });
       setSlotPrompts((prev) =>
         prev.map((item, index) =>
-          index === slotIndex ? { id: variant.id, name: variant.name, prompt: "" } : item
+          index === slotIndex
+            ? { id: variant.id, name: variant.name, prompt: "" }
+            : item
         )
       );
     },
@@ -223,10 +225,7 @@ export default function App() {
   }, []);
 
   const runStickerGeneration = useCallback(
-    async (
-      approvedId: string,
-      request: PendingGeneration
-    ) => {
+    async (approvedId: string, request: PendingGeneration) => {
       setIsGenerating(true);
       setProgress(0);
 
@@ -263,10 +262,9 @@ export default function App() {
     [generatedImages]
   );
 
-  // 👈 생성 버튼 클릭 시 로그인 체크 추가
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
-      // 1. 로그인이 안 되어 있으면 모달 열고 중단
+      // 1. 로그인이 안 되어 있으면 모달 열고 생성 중단
       if (!user) {
         setIsLoginModalOpen(true);
         return;
@@ -346,7 +344,7 @@ export default function App() {
       }
     },
     [
-      user, // 👈 의존성 추가
+      user,
       uploadedImage,
       title,
       description,
@@ -429,8 +427,6 @@ export default function App() {
     pendingGenerationRef.current = null;
   }, [canonicalBusy, canonicalStatus]);
 
-  // ❌ [삭제됨]: authLoading 시 화면 전체를 막던 코드와 !user 일 때 가로채던 코드 제거
-
   const isReady = !!uploadedImage && !!title.trim();
   const uiBusy =
     isGenerating ||
@@ -444,28 +440,16 @@ export default function App() {
         onLoginClick={() => setIsLoginModalOpen(true)}
       />
 
-      {/* Step indicators */}
+      {/* 단계 인디케이터 */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5">
         <div className="flex items-center gap-2 flex-wrap">
-          <StepBadge
-            step={1}
-            label="이미지 업로드"
-            done={!!uploadedImage}
-          />
+          <StepBadge step={1} label="이미지 업로드" done={!!uploadedImage} />
           <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge
-            step={2}
-            label="정보 입력"
-            done={!!title.trim()}
-          />
+          <StepBadge step={2} label="정보 입력" done={!!title.trim()} />
           <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge
-            step={3}
-            label="캐릭터 확인"
-            done={!!approvedCanonicalId}
-          />
+          <StepBadge step={3} label="캐릭터 확인" done={!!approvedCanonicalId} />
           <span className="text-border text-sm mx-0.5">→</span>
 
           <StepBadge
@@ -488,9 +472,7 @@ export default function App() {
             uploadedImage={uploadedImage}
             setUploadedImage={(value) => {
               setUploadedImage(value);
-
               invalidateCanonical();
-
               if (!value) {
                 setGeneratedImages([]);
                 setProgress(0);
@@ -535,14 +517,13 @@ export default function App() {
         onClose={handleCloseCanonicalPanel}
       />
 
-      {/* 👈 모달로 띄워지는 로그인 화면 */}
+      {/* 로그인 모달: 배경 블러 없이 깔끔한 반투명 오버레이 */}
       {isLoginModalOpen && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            backdropFilter: "blur(4px)",
+            backgroundColor: "rgba(0, 0, 0, 0.45)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -554,8 +535,9 @@ export default function App() {
             style={{ position: "relative" }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 닫기 버튼 */}
+            {/* 닫기 X 버튼 */}
             <button
+              type="button"
               onClick={() => setIsLoginModalOpen(false)}
               style={{
                 position: "absolute",
@@ -564,14 +546,15 @@ export default function App() {
                 zIndex: 10,
                 background: "transparent",
                 border: "none",
-                fontSize: "18px",
+                fontSize: "16px",
                 color: "#71717a",
                 cursor: "pointer",
+                padding: "4px 8px",
               }}
             >
               ✕
             </button>
-            <Login />
+            <Login onSuccess={() => setIsLoginModalOpen(false)} />
           </div>
         </div>
       )}
