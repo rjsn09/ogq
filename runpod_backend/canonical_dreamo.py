@@ -77,7 +77,7 @@ class PromptPlanner:
                 api_key=self.api_key,
                 base_url=self.base_url,
                 timeout=45.0,
-                max_retries=1
+                max_retries=0
             )
 
     @staticmethod
@@ -113,29 +113,35 @@ class PromptPlanner:
         system: str,
         user: str,
     ) -> dict[str, Any]:
+        from openai import RateLimitError
+
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
+        exhausted_keys: set[str] = set()
         for attempt in range(2):
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                response_format={"type": "json_object"},
-            )
-            headers: dict = response.headers
-            if headers.get("x-ratelimit-remaining-requests") == 0 or headers.get("x-ratelimit-remaining-tokens") == 0:
-                if self.api_key == self.base_api_key:
-                    self.api_key = self.fallback_api_key
-                else:
-                    self.api_key = self.base_api_key
-                self.client = OpenAI(
-                    api_key=self.api_key,
-                    base_url=self.base_url,
-                    timeout=45.0,
-                    max_retries=1
-                )
-                return self._json_call(system, user)
+            while True:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        response_format={"type": "json_object"},
+                    )
+                    break
+                except RateLimitError:
+                    exhausted_keys.add(self.api_key)
+                    next_key = next((
+                        key for key in (self.base_api_key, self.fallback_api_key)
+                        if key and key not in exhausted_keys
+                    ), None)
+                    if next_key is None:
+                        # Preserve the provider error and Retry-After headers.
+                        raise
+                    # with_options preserves the endpoint, timeout and transport.
+                    self.client = self.client.with_options(api_key=next_key)
+                    self.api_key = next_key
+            # A successful response is usable even when remaining quota is zero.
             content = response.choices[0].message.content or "{}"
             try:
                 return self._parse_json(content)
@@ -159,12 +165,6 @@ class PromptPlanner:
         framing_hint: str,
     ) -> str:
         framing_hint = self._normalize_framing(framing_hint)
-        # Shared by template and LLM modes: identity reference must not lock acting.
-        detailed_variant = (
-            detailed_variant + ". Re-stage the head, torso and both arms for this reaction; "
-            "use the reference only for character appearance, never as a pose template. "
-            "Keep the requested turn, lean and asymmetric hand positions visible within the upper-body crop."
-        )
         if self.mode == "template":
             frame = "Upper-body close-up, head, shoulders and upper torso filling the frame, cropped above the hips; legs and feet outside the image"
             return (f"{emoji_style}. {frame}. One neutral front-facing chibi character, arms relaxed, "

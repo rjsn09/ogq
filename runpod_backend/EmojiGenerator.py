@@ -597,8 +597,8 @@ Return JSON only, exactly with these keys:
     def _dreamo_generate(self, *, prompt: str, reference_images: list[Image.Image], reference_tasks: list[str], seed: int, requested_steps: int, width: int | None = None, height: int | None = None, use_style: bool = False) -> Image.Image:
         refs, tasks = list(reference_images), list(reference_tasks)
         if use_style and self.style_image is not None:
-            refs.append(self.style_image)
-            tasks.append("style")
+            # refs.append(self.style_image)
+            # tasks.append("style")
             identity_rule = "Use reference 1 for character identity. " if reference_images else "Use the text for character identity. "
             prompt = ("generate a same style image. " + identity_rule
                       + f"Use reference {len(refs)} only for linework, flat coloring and chibi proportions; "

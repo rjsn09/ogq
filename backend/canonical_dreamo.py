@@ -38,23 +38,32 @@ class PromptPlanner:
         if self.mode == "llm":
             from openai import OpenAI
 
-            base_url = os.getenv(
+            self.base_url = os.getenv(
                 "LLM_BASE_URL",
                 "https://api.openai.com/v1"
             ).strip()
 
-            if "api.groq.com" in base_url:
-                api_key = os.getenv(
+            if "api.groq.com" in self.base_url:
+                self.base_api_key = os.getenv(
                     "GROQ_API_KEY",
                     ""
                 ).strip()
+                self.fallback_api_key = os.getenv(
+                    "GROQ_API_KEY_FB",
+                    ""
+                ).strip()
             else:
-                api_key = os.getenv(
+                self.base_api_key = os.getenv(
                     "OPENAI_API_KEY",
                     ""
                 ).strip()
+                self.fallback_api_key = os.getenv(
+                    "OPENAI_API_KEY_FB",
+                    ""
+                ).strip()
+            self.api_key = self.base_api_key
 
-            if not api_key:
+            if not self.api_key:
                 raise RuntimeError(
                     "LLM API key is missing."
                 )
@@ -65,10 +74,10 @@ class PromptPlanner:
                 )
 
             self.client = OpenAI(
-                api_key=api_key,
-                base_url=base_url,
+                api_key=self.api_key,
+                base_url=self.base_url,
                 timeout=45.0,
-                max_retries=1
+                max_retries=0
             )
 
     @staticmethod
@@ -104,16 +113,37 @@ class PromptPlanner:
         system: str,
         user: str,
     ) -> dict[str, Any]:
+        from openai import RateLimitError
+
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
+        # A rate-limited key is never retried within this logical call,
+        # including the JSON repair attempt. Keep the successful key active.
+        exhausted_keys: set[str] = set()
         for attempt in range(2):
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                response_format={"type": "json_object"},
-            )
+            while True:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        response_format={"type": "json_object"},
+                    )
+                    break
+                except RateLimitError:
+                    exhausted_keys.add(self.api_key)
+                    next_key = next((
+                        key for key in (self.base_api_key, self.fallback_api_key)
+                        if key and key not in exhausted_keys
+                    ), None)
+                    if next_key is None:
+                        # Preserve the provider error and Retry-After headers.
+                        raise
+                    # with_options preserves the endpoint, timeout and transport.
+                    self.client = self.client.with_options(api_key=next_key)
+                    self.api_key = next_key
+            # A successful response is usable even when remaining quota is zero.
             content = response.choices[0].message.content or "{}"
             try:
                 return self._parse_json(content)
@@ -137,12 +167,6 @@ class PromptPlanner:
         framing_hint: str,
     ) -> str:
         framing_hint = self._normalize_framing(framing_hint)
-        # Shared by template and LLM modes: identity reference must not lock acting.
-        detailed_variant = (
-            detailed_variant + ". Re-stage the head, torso and both arms for this reaction; "
-            "use the reference only for character appearance, never as a pose template. "
-            "Keep the requested turn, lean and asymmetric hand positions visible within the upper-body crop."
-        )
         if self.mode == "template":
             frame = "Upper-body close-up, head, shoulders and upper torso filling the frame, cropped above the hips; legs and feet outside the image"
             return (f"{emoji_style}. {frame}. One neutral front-facing chibi character, arms relaxed, "
