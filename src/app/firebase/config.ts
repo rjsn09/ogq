@@ -4,10 +4,13 @@ import { getAuth } from "firebase/auth";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore"; // 👈 1. Firestore SDK import 추가
 
+const api_Key = process.env.FIREBASE_API_KEY;
+const firebase_domain = process.env.FIREBASE_DOMAIN
+
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyA9D83qw_1ZS9zQZlGCuRbWYeLmm9F6kN0",
-  authDomain: "vvos-f58b3.firebaseapp.com",
+  apiKey: api_Key,
+  authDomain: firebase_domain,
   projectId: "vvos-f58b3",
   storageBucket: "vvos-f58b3.firebasestorage.app",
   messagingSenderId: "799310100616",

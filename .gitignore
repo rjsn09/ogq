@@ -14,3 +14,4 @@ cmd.txt
 dataset_config.toml
 *__pycache__
 styles/
+config.ts
