@@ -137,6 +137,12 @@ class PromptPlanner:
         framing_hint: str,
     ) -> str:
         framing_hint = self._normalize_framing(framing_hint)
+        # Shared by template and LLM modes: identity reference must not lock acting.
+        detailed_variant = (
+            detailed_variant + ". Re-stage the head, torso and both arms for this reaction; "
+            "use the reference only for character appearance, never as a pose template. "
+            "Keep the requested turn, lean and asymmetric hand positions visible within the upper-body crop."
+        )
         if self.mode == "template":
             frame = "Upper-body close-up, head, shoulders and upper torso filling the frame, cropped above the hips; legs and feet outside the image"
             return (f"{emoji_style}. {frame}. One neutral front-facing chibi character, arms relaxed, "
@@ -221,7 +227,7 @@ Write one coherent English canonical generation prompt.
         prompt = str(data.get("prompt", "")).strip()
         if not prompt:
             raise ValueError("LLM returned an empty canonical prompt.")
-        return "Upper-body close-up, cropped above the hips, legs and feet outside the image. " + prompt
+        return "Upper-body sticker, lower edge cuts across the mid-torso. Head, shoulders and arms fill the image; hips, legs and feet are outside the crop. " + prompt
 
     def build_sticker_plan(
         self,
@@ -235,9 +241,15 @@ Write one coherent English canonical generation prompt.
         user_prompt: str = "",
     ) -> StickerPlan:
         framing_hint = self._normalize_framing(framing_hint)
+        # Shared by template and LLM modes: identity reference must not lock acting.
+        detailed_variant = (
+            detailed_variant + ". Re-stage the head, torso and both arms for this reaction; "
+            "use the reference only for character appearance, never as a pose template. "
+            "Keep the requested turn, lean and asymmetric hand positions visible within the upper-body crop."
+        )
         if self.mode == "template":
             frame = "upper-body"
-            prompt = (f"Upper-body close-up, cropped above the hips, legs and feet outside the image. {detailed_variant} "
+            prompt = (f"Upper-body sticker, lower edge cuts across the mid-torso. Head, shoulders and arms fill the image; hips, legs and feet are outside the crop. {detailed_variant} "
                       f"This is one {frame} chibi reaction sticker with a large, clearly drawn face so the emotion reads at a glance. "
                       f"Same character as the reference image: {original_profile}. "
                       "Plain white background; no lettering. "
@@ -248,6 +260,10 @@ Write one coherent English canonical generation prompt.
 
         system = """
         You plan ONE chibi reaction sticker for DreamO/FLUX.
+HARD CONSTRAINT: upper-body crop overrides every other input.
+Write crop first, then torso direction and both hand positions, then expression,
+then brief identity and style. Preserve appearance, not the reference pose.
+Never reduce a directed turn or lean to a straight-on neutral bust.
         Return JSON with two fields:
         - "prompt": the full DreamO generation prompt.
         - "clip_prompt": a short semantic scoring query for OpenAI CLIP ViT-B/32.
@@ -282,7 +298,7 @@ Write one coherent English canonical generation prompt.
         contradicts RANK 3.
         RANK 6 STYLE_CONTRACT: rendering style only (line, coloring, shading, chibi
         proportions, background). Ignore its face, eye, mouth and pose descriptions.
-        RANK 7 FRAMING_HINT: composition scope. If the reaction needs something the
+        FRAMING_HINT: hard composition constraint above all ranks. If the reaction needs something the
         framing cannot show, keep the reaction and translate the action to fit.
 
         The canonical image is supplied separately as the DreamO reference. It carries
@@ -308,7 +324,8 @@ Write one coherent English canonical generation prompt.
 
         HOW TO WRITE "prompt"
         Write 5 to 6 natural English sentences in this order:
-        1. Scene: the emotion and its cause.
+        1. Upper-body crop, torso turn or lean, and both hand positions. These must lead the prompt.
+        Then the emotion and its cause.
         2. Face: the exact eye shape and mouth shape (for example closed eyes curved
         downward, half-closed heavy eyelids, wide open mouth, small pout).
         3. Body: head tilt or turn, shoulders, lean and posture, stated with strong
@@ -343,10 +360,10 @@ Write one coherent English canonical generation prompt.
         """.strip()
 
         user = f"""
-        [RANK 1/7] USER_PROMPT (extra scene the user wants):
+        [RANK 2/7] USER_PROMPT (extra scene the user wants):
         {user_prompt}
         
-        [RANK 2/7] THEME (emotion to convey):
+        [RANK 1/7] THEME (emotion to convey):
         {theme_name}
 
         [RANK 3/7] ORIGINAL_PROFILE (identity only, source of truth):
@@ -361,7 +378,7 @@ Write one coherent English canonical generation prompt.
         [RANK 6/7] STYLE_CONTRACT (rendering style only):
         {emoji_style}
 
-        [RANK 7/7] FRAMING_HINT (composition scope):
+        [HARD CONSTRAINT] FRAMING_HINT (overrides all ranks):
         {framing_hint}
 
         Resolve conflicts by rank within each domain. Keep the identity, re-act the
@@ -383,7 +400,7 @@ Write one coherent English canonical generation prompt.
         print("prompt:", prompt)
         print("clip_prompt:", clip_prompt)
         return StickerPlan(
-            prompt="Upper-body close-up, cropped above the hips, legs and feet outside the image. " + prompt,
+            prompt="Upper-body sticker, lower edge cuts across the mid-torso. Head, shoulders and arms fill the image; hips, legs and feet are outside the crop. " + prompt,
             clip_prompt=clip_prompt,
         )
 

@@ -747,11 +747,11 @@ Return JSON only, exactly with these keys:
         seed_base: int,
     ) -> list[Image.Image]:
         prompt = (
-            f"{self.base_positive}. "
             f"{final_prompt}. "
+            f"{self.base_positive}. "
             "Use the supplied canonical character as the fixed identity reference. "
             "Preserve identity, outfit structure, accessories, markings and colors; "
-            "allow pose, gesture, action, expression and reaction effects to change."
+            "replace the reference pose, head angle and arm placement with the directed reaction."
         )
 
         outputs: list[Image.Image] = []

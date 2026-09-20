@@ -137,6 +137,12 @@ class PromptPlanner:
         framing_hint: str,
     ) -> str:
         framing_hint = self._normalize_framing(framing_hint)
+        # Shared by template and LLM modes: identity reference must not lock acting.
+        detailed_variant = (
+            detailed_variant + ". Re-stage the head, torso and both arms for this reaction; "
+            "use the reference only for character appearance, never as a pose template. "
+            "Keep the requested turn, lean and asymmetric hand positions visible within the upper-body crop."
+        )
         if self.mode == "template":
             frame = "Upper-body close-up, head, shoulders and upper torso filling the frame, cropped above the hips; legs and feet outside the image"
             return (f"{emoji_style}. {frame}. One neutral front-facing chibi character, arms relaxed, "
@@ -221,7 +227,7 @@ Write one coherent English canonical generation prompt.
         prompt = str(data.get("prompt", "")).strip()
         if not prompt:
             raise ValueError("LLM returned an empty canonical prompt.")
-        return "Upper-body close-up, cropped above the hips, legs and feet outside the image. " + prompt
+        return "Upper-body sticker, lower edge cuts across the mid-torso. Head, shoulders and arms fill the image; hips, legs and feet are outside the crop. " + prompt
 
     def build_sticker_plan(
         self,
@@ -234,9 +240,15 @@ Write one coherent English canonical generation prompt.
         framing_hint: str,
     ) -> StickerPlan:
         framing_hint = self._normalize_framing(framing_hint)
+        # Shared by template and LLM modes: identity reference must not lock acting.
+        detailed_variant = (
+            detailed_variant + ". Re-stage the head, torso and both arms for this reaction; "
+            "use the reference only for character appearance, never as a pose template. "
+            "Keep the requested turn, lean and asymmetric hand positions visible within the upper-body crop."
+        )
         if self.mode == "template":
             frame = "upper-body"
-            prompt = (f"Upper-body close-up, cropped above the hips, legs and feet outside the image. One {frame} chibi reaction sticker. Action and expression: {detailed_variant}. "
+            prompt = (f"Upper-body sticker, lower edge cuts across the mid-torso. Head, shoulders and arms fill the image; hips, legs and feet are outside the crop. One {frame} chibi reaction sticker. Action and expression: {detailed_variant}. "
                       "Make the hands, silhouette and facial expression clearly readable. "
                       f"Preserve character identity from the approved reference: {canonical_profile}. "
                       "Change the pose to match the reaction. Plain white background; no lettering. "
@@ -246,6 +258,10 @@ Write one coherent English canonical generation prompt.
 
         system = """
 You plan ONE chibi reaction sticker for DreamO/FLUX.
+HARD CONSTRAINT: upper-body crop overrides every other input.
+Write crop first, then torso direction and both hand positions, then expression,
+then brief identity and style. Preserve appearance, not the reference pose.
+Never reduce a directed turn or lean to a straight-on neutral bust.
 
 Return TWO prompts:
 1. "prompt": full DreamO generation prompt.
@@ -339,7 +355,7 @@ requested reaction strongly while respecting the framing hint.
             )
 
         return StickerPlan(
-            prompt="Upper-body close-up, cropped above the hips, legs and feet outside the image. " + prompt,
+            prompt="Upper-body sticker, lower edge cuts across the mid-torso. Head, shoulders and arms fill the image; hips, legs and feet are outside the crop. " + prompt,
             clip_prompt=clip_prompt,
         )
 
