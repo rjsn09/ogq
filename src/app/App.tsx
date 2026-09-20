@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "./firebase/config";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "./firebase/config";
 import Login from "./Login";
 import TermsConsentModal from "./TermsConsentModal";
 import InputPanel from "./components/InputPanel";
@@ -134,14 +135,26 @@ export default function App() {
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [hasAgreedTerms, setHasAgreedTerms] = useState(false);
 
+  // Firestore DB에서 사용자 약관 동의 이력 조회
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         setIsLoginModalOpen(false);
-        // 사용자별 동의 여부 로컬 캐시 조회
-        const agreed = localStorage.getItem(`terms_agreed_${currentUser.uid}`);
-        if (agreed) setHasAgreedTerms(true);
+
+        try {
+          const userDocRef = doc(db, "users", currentUser.uid);
+          const docSnap = await getDoc(userDocRef);
+
+          if (docSnap.exists() && docSnap.data()?.termsAgreed === true) {
+            setHasAgreedTerms(true);
+          } else {
+            setHasAgreedTerms(false);
+          }
+        } catch (err) {
+          console.error("Firestore 약관 동의 확인 실패:", err);
+          setHasAgreedTerms(false);
+        }
       } else {
         setHasAgreedTerms(false);
       }
@@ -270,22 +283,31 @@ export default function App() {
     [generatedImages]
   );
 
-  // 생성 실행 메인 함수
+  // 생성 버튼 클릭 핸들러
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
-      // 1. 로그인 여부 확인
+      // 1. 비로그인 시 로그인 팝업
       if (!user) {
         setIsLoginModalOpen(true);
         return;
       }
 
-      // 2. 약관 및 개인정보 처리 동의 여부 확인
+      // 2. Firestore DB 미동의 상태일 때 약관 동의 팝업
       if (!hasAgreedTerms) {
         setIsTermsModalOpen(true);
         return;
       }
 
-      if (!uploadedImage || !title.trim()) return;
+      // 3. 필수 입력값 체크
+      if (!uploadedImage) {
+        alert("1단계: 기준 캐릭터 이미지를 먼저 업로드해 주세요!");
+        return;
+      }
+
+      if (!title.trim()) {
+        alert("2단계: 이모티콘 제목을 입력해 주세요!");
+        return;
+      }
 
       const isPartial = !!indices && indices.length > 0;
 
@@ -373,21 +395,33 @@ export default function App() {
     ]
   );
 
-  // 약관 동의 확인 핸들러
-  const handleTermsConfirm = (allowAiTraining: boolean) => {
-    setHasAgreedTerms(true);
-    setIsTermsModalOpen(false);
+  // Firestore DB에 영구 저장하는 동의 핸들러
+  const handleTermsConfirm = async (allowAiTraining: boolean) => {
+    if (!user?.uid) return;
 
-    if (user?.uid) {
-      localStorage.setItem(`terms_agreed_${user.uid}`, "true");
-      localStorage.setItem(
-        `terms_ai_training_${user.uid}`,
-        allowAiTraining ? "true" : "false"
+    try {
+      // 👈 Firestore DB의 users 컬렉션에 사용자 ID 문서로 영구 저장
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          termsAgreed: true,
+          termsVersion: "1.0",
+          agreedAt: serverTimestamp(),
+          allowAiTraining: allowAiTraining,
+          userEmail: user.email || "",
+        },
+        { merge: true }
       );
-    }
 
-    // 동의 완료 즉시 이모티콘 생성 진행
-    handleGenerate();
+      setHasAgreedTerms(true);
+      setIsTermsModalOpen(false);
+
+      // 동의 완료 즉시 이모티콘 생성 진행
+      handleGenerate();
+    } catch (err) {
+      console.error("약관 동의 DB 저장 실패:", err);
+      alert("약관 동의 정보를 저장하지 못했습니다. 다시 시도해 주세요.");
+    }
   };
 
   const handleApproveCanonical = useCallback(async () => {
@@ -473,7 +507,7 @@ export default function App() {
         onLoginClick={() => setIsLoginModalOpen(true)}
       />
 
-      {/* 단계 인디케이터 */}
+      {/* 진행 단계 인디케이터 */}
       <div className="max-w-[1400px] mx-auto px-6 pt-5">
         <div className="flex items-center gap-2 flex-wrap">
           <StepBadge step={1} label="이미지 업로드" done={!!uploadedImage} />
@@ -595,7 +629,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. 약관 및 개인정보 처리방침 동의 모달 */}
+      {/* 2. 이용약관 및 개인정보 처리방침 동의 모달 */}
       <TermsConsentModal
         isOpen={isTermsModalOpen}
         onClose={() => setIsTermsModalOpen(false)}
