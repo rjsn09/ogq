@@ -38,23 +38,32 @@ class PromptPlanner:
         if self.mode == "llm":
             from openai import OpenAI
 
-            base_url = os.getenv(
+            self.base_url = os.getenv(
                 "LLM_BASE_URL",
                 "https://api.openai.com/v1"
             ).strip()
 
-            if "api.groq.com" in base_url:
-                api_key = os.getenv(
+            if "api.groq.com" in self.base_url:
+                self.base_api_key = os.getenv(
                     "GROQ_API_KEY",
                     ""
                 ).strip()
+                self.fallback_api_key = os.getenv(
+                    "GROQ_API_KEY_FB",
+                    ""
+                ).strip()
             else:
-                api_key = os.getenv(
+                self.base_api_key = os.getenv(
                     "OPENAI_API_KEY",
                     ""
                 ).strip()
+                self.fallback_api_key = os.getenv(
+                    "OPENAI_API_KEY_FB",
+                    ""
+                ).strip()
+            self.api_key = self.base_api_key
 
-            if not api_key:
+            if not self.api_key:
                 raise RuntimeError(
                     "LLM API key is missing."
                 )
@@ -65,8 +74,8 @@ class PromptPlanner:
                 )
 
             self.client = OpenAI(
-                api_key=api_key,
-                base_url=base_url,
+                api_key=self.api_key,
+                base_url=self.base_url,
                 timeout=45.0,
                 max_retries=1
             )
@@ -114,6 +123,19 @@ class PromptPlanner:
                 messages=messages,
                 response_format={"type": "json_object"},
             )
+            headers: dict = response.headers
+            if headers.get("x-ratelimit-remaining-requests") == 0 or headers.get("x-ratelimit-remaining-tokens") == 0:
+                if self.api_key == self.base_api_key:
+                    self.api_key = self.fallback_api_key
+                else:
+                    self.api_key = self.base_api_key
+                self.client = OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    timeout=45.0,
+                    max_retries=1
+                )
+                return self._json_call(system, user)
             content = response.choices[0].message.content or "{}"
             try:
                 return self._parse_json(content)
