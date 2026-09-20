@@ -15,7 +15,10 @@ import {
 import {
   VARIANT_CATALOG,
   DEFAULT_VARIANTS,
+  VARIANT_PROMPTS,
+  DEFAULT_PROMPTS,
   Variant,
+  Prompts
 } from "./utils/imageGenerator";
 
 function Header({ userEmail }: { userEmail?: string | null }) {
@@ -106,6 +109,7 @@ function StepBadge({
 type PendingGeneration = {
   indices: number[];
   variantAssignments: Record<number, string>;
+  userPrompts: Record<number, string>;
   isPartial: boolean;
 };
 
@@ -138,6 +142,12 @@ export default function App() {
       (_, i) => VARIANT_CATALOG[i] ?? DEFAULT_VARIANTS[i]
     )
   );
+  const [slotPrompts, setSlotPrompts] = useState<Prompts[]>(
+    Array.from(
+      { length: 24 },
+      (_, i) => VARIANT_PROMPTS[i] ?? DEFAULT_PROMPTS[i]
+    )
+  )
 
   // ------------------------------------------------------------------
   // Canonical state
@@ -184,9 +194,18 @@ export default function App() {
         next[slotIndex] = variant;
         return next;
       });
+      setSlotPrompts((prev) => prev.map((item, index) =>
+        index === slotIndex ? { id: variant.id, name: variant.name, prompt: "" } : item
+      ));
     },
     []
   );
+
+  const handlePromptChange = useCallback((slotIndex: number, prompt: string) => {
+    setSlotPrompts((prev) => prev.map((item, index) =>
+      index === slotIndex ? { ...item, prompt } : item
+    ));
+  }, []);
 
   const runStickerGeneration = useCallback(
     async (
@@ -212,7 +231,7 @@ export default function App() {
           request.indices,
           request.variantAssignments,
           request.isPartial ? generatedImages : undefined,
-          { signal: controller.signal }
+          { signal: controller.signal, userPrompts: request.userPrompts }
         );
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -252,6 +271,9 @@ export default function App() {
       const request: PendingGeneration = {
         indices: targetIndices,
         variantAssignments,
+        userPrompts: Object.fromEntries(targetIndices.map((index) => [
+          index, slotPrompts[index - 1]?.prompt.trim() ?? "",
+        ])),
         isPartial,
       };
 
@@ -303,6 +325,7 @@ export default function App() {
       title,
       description,
       slotVariants,
+      slotPrompts,
       approvedCanonicalId,
       canonicalId,
       canonicalStatus,
@@ -467,6 +490,8 @@ export default function App() {
           <GeneratedGrid
             images={generatedImages}
             slotVariants={slotVariants}
+            slotPrompts={slotPrompts}
+            onPromptChange={handlePromptChange}
             onVariantChange={handleVariantChange}
             isGenerating={uiBusy}
             progress={progress}

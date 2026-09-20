@@ -8,6 +8,7 @@ export interface GenerateOptions {
   signal?: AbortSignal;
   baseUrl?: string;
   canonicalId?: string;
+  userPrompts?: Record<number, string>;
   candidateCount?: number;
   numInferenceSteps?: number;
   img2imgStrength?: number;
@@ -44,6 +45,9 @@ export async function generateOGQImages(imageDataUrl: string, onProgress?: (coun
   }
   formData.append('indices', JSON.stringify(targetIndices));
   formData.append('variant_names', JSON.stringify(names));
+  formData.append('variant_prompts', JSON.stringify(Object.fromEntries(
+    targetIndices.map(index => [index, options.userPrompts?.[index]?.trim() ?? '']),
+  )));
   formData.append('candidate_count', String(candidateCount));
   formData.append('num_inference_steps', String(steps));
   formData.append('img2img_strength', String(options.img2imgStrength ?? 0.68));

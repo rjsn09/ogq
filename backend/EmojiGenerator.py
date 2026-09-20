@@ -353,9 +353,8 @@ FRAMING CLASSIFICATION:
   waist, or arms, but does not provide the complete lower body and feet.
 - "unknown": use only when the framing cannot be determined reliably.
 
-The canonical image must later preserve this information scope: a full-body
-source should become a full-body canonical; an upper-body source should remain
-upper-body rather than inventing unseen lower-body identity details.
+Source framing is descriptive metadata only. Generated canonical images and
+stickers always use an upper-body crop, even when the source shows the full body.
 
 PERSISTENT IDENTITY:
 Return only traits that should normally remain when the same character is
@@ -673,19 +672,11 @@ Return JSON only, exactly with these keys:
         framing_hint: str = "upper_body",
     ) -> Image.Image:
         # ip_scale is retained only for old API compatibility.
-        framing_hint = self._normalize_framing(framing_hint)
-        if framing_hint == "full_body":
-            framing_text = (
-                "Full-body canonical: show the complete chibi character from head "
-                "to feet, with a compact but readable body, both hands and both "
-                "feet clearly visible."
-            )
-        else:
-            framing_text = (
-                "Upper-body canonical: preserve the source information scope; show "
-                "the head, shoulders and visible torso/arms clearly, and do not "
-                "invent hidden lower-body identity details."
-            )
+        framing_text = (
+            "Upper-body close-up: head, shoulders and upper torso fill the frame, "
+            "cropped above the hips. Legs, feet and lower-body clothing stay "
+            "outside the image regardless of the reference composition."
+        )
 
         prompt = (
             f"{self.base_positive}. "

@@ -1,11 +1,14 @@
 import { useState, useCallback, useMemo } from "react";
 import { Download, ZoomIn, X, CheckSquare, Square, ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
 import JSZip from "jszip";
-import { VARIANT_CATALOG, DEFAULT_VARIANTS, Variant } from "../utils/imageGenerator";
+import { VARIANT_CATALOG, DEFAULT_VARIANTS, Variant, Prompts } from "../utils/imageGenerator";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 
 interface GeneratedGridProps {
   images?: (string | null)[];
   slotVariants?: Variant[];
+  slotPrompts?: Prompts[];
+  onPromptChange?: (slotIndex: number, prompt: string) => void;
   onVariantChange?: (slotIndex: number, variantId: string) => void;
   isGenerating?: boolean;
   progress?: number;
@@ -18,6 +21,8 @@ interface GeneratedGridProps {
 export default function GeneratedGrid({
   images: rawImages,
   slotVariants: rawSlotVariants,
+  slotPrompts,
+  onPromptChange,
   onVariantChange = () => {},
   isGenerating = false,
   progress = 0,
@@ -29,6 +34,13 @@ export default function GeneratedGrid({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [isZipping, setIsZipping] = useState(false);
+  const [promptSlot, setPromptSlot] = useState<number | null>(null);
+  const [promptDraft, setPromptDraft] = useState("");
+
+  const openPrompt = (index: number) => {
+    setPromptDraft(slotPrompts?.[index]?.prompt ?? "");
+    setPromptSlot(index);
+  };
 
   const images = useMemo(
     () => Array.from({ length: 24 }, (_, i) => rawImages?.[i] ?? null),
@@ -239,6 +251,7 @@ export default function GeneratedGrid({
                         </span>
                         <select
                           value={variant.id}
+                          disabled={isGenerating}
                           onChange={(e) => onVariantChange(i, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
                           className="w-[90%] max-w-[84px] text-[10px] bg-card border border-primary/25 rounded-full px-2.5 py-1 text-foreground truncate text-center hover:border-primary focus:border-primary focus:outline-none transition-colors"
@@ -250,6 +263,14 @@ export default function GeneratedGrid({
                             </option>
                           ))}
                         </select>
+                        <button
+                          type="button"
+                          disabled={isGenerating}
+                          onClick={(event) => { event.stopPropagation(); openPrompt(i); }}
+                          className="text-[10px] text-primary hover:underline disabled:opacity-50"
+                        >
+                          {slotPrompts?.[i]?.prompt ? "프롬프트 수정" : "프롬프트 작성"}
+                        </button>
 
                         {/* Selected indicator */}
                         {isSelected && (
@@ -320,11 +341,12 @@ export default function GeneratedGrid({
 
                   {/* Variant label / selector (bottom) */}
                   <div
-                    className="absolute bottom-1 inset-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute bottom-1 inset-x-1 flex flex-col items-center gap-1"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <select
                       value={variant.id}
+                      disabled={isGenerating}
                       onChange={(e) => onVariantChange(i, e.target.value)}
                       className="w-[90%] text-[10px] bg-white/90 text-foreground border border-primary/25 rounded-full px-2.5 py-0.5 outline-none truncate text-center hover:border-primary focus:border-primary transition-colors"
                       style={{ fontWeight: 600 }}
@@ -335,6 +357,14 @@ export default function GeneratedGrid({
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      disabled={isGenerating}
+                      onClick={() => openPrompt(i)}
+                      className="rounded-full bg-card px-2 py-0.5 text-[10px] text-primary hover:underline disabled:opacity-50"
+                    >
+                      {slotPrompts?.[i]?.prompt ? "프롬프트 수정" : "프롬프트 작성"}
+                    </button>
                   </div>
 
                   {/* Selected indicator */}
@@ -388,6 +418,40 @@ export default function GeneratedGrid({
           )}
         </button>
       )}
+
+      <Dialog open={promptSlot !== null} onOpenChange={(open) => { if (!open) setPromptSlot(null); }}>
+        <DialogContent>
+          <DialogTitle>
+            {promptSlot !== null ? `${promptSlot + 1}. ${slotVariants[promptSlot]?.name}` : ""} 프롬프트
+          </DialogTitle>
+          <DialogDescription>
+            이 칸에 원하는 표정이나 동작을 적어 주세요. 비워 두면 기본 테마로 생성됩니다. 테마를 바꾸면 프롬프트가 초기화됩니다.
+          </DialogDescription>
+          <label htmlFor="slot-prompt" className="text-sm text-foreground">추가 요청</label>
+          <textarea
+            id="slot-prompt"
+            value={promptDraft}
+            onChange={(event) => setPromptDraft(event.target.value)}
+            disabled={isGenerating}
+            rows={5}
+            placeholder="예: 두 손을 흔들며 활짝 웃는 모습"
+            className="w-full rounded-xl border border-border bg-card p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setPromptSlot(null)} className="rounded-xl border border-border px-4 py-2 text-sm">취소</button>
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() => {
+                if (promptSlot === null) return;
+                onPromptChange?.(promptSlot, promptDraft.trim());
+                setPromptSlot(null);
+              }}
+              className="rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+            >저장</button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Lightbox */}
       {lightboxIdx !== null && images[lightboxIdx] && (

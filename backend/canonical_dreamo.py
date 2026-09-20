@@ -73,45 +73,60 @@ class PromptPlanner:
 
     @staticmethod
     def _normalize_framing(value: str) -> str:
-        value = str(value or "upper_body").strip().lower()
-        if value == "full_body":
-            return "full_body"
+        # Output composition is fixed regardless of reference framing.
         return "upper_body"
 
     @staticmethod
     def _parse_json(text: str) -> dict[str, Any]:
         text = text.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines[-1].strip() == "```":
+                text = "\n".join(lines[1:-1]).strip()
         try:
-            return json.loads(text)
+            data = json.loads(text)
         except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start < 0 or end <= start:
-                raise ValueError(
-                    f"LLM did not return JSON: {text[:300]}"
-                )
-            return json.loads(text[start:end + 1])
+            # Preserve the root type even when the model adds introductory text.
+            starts = [index for index in (text.find("{"), text.find("[")) if index >= 0]
+            if not starts:
+                raise ValueError("LLM did not return a JSON object.")
+            data, _ = json.JSONDecoder().raw_decode(text[min(starts):])
+        if isinstance(data, list) and len(data) == 1:
+            data = data[0]
+        if not isinstance(data, dict):
+            raise ValueError("LLM must return one JSON object, not a list or scalar.")
+        if not isinstance(data.get("prompt"), str) or not data["prompt"].strip():
+            raise ValueError("LLM JSON must contain a non-empty prompt string.")
+        return data
 
     def _json_call(
         self,
         system: str,
         user: str,
     ) -> dict[str, Any]:
-        try:
-            print("self.client.chat.completions.create, canonical_creamo 76")
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        for attempt in range(2):
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
+                messages=messages,
                 response_format={"type": "json_object"},
             )
-        except Exception as e:
-            print("[LLM] prompt planner ERROR:", type(e).__name__, str(e))
-            raise
-        content = response.choices[0].message.content or "{}"
-        return self._parse_json(content)
+            content = response.choices[0].message.content or "{}"
+            try:
+                return self._parse_json(content)
+            except ValueError as exc:
+                if attempt == 1:
+                    raise ValueError(
+                        "LLM이 올바른 프롬프트 JSON을 반환하지 못했습니다. 다시 생성해 주세요."
+                    ) from exc
+                messages.append({
+                    "role": "user",
+                    "content": "Return exactly ONE JSON object with a non-empty string field "
+                               "'prompt' and the other requested fields. Do not return an array.",
+                })
 
     def build_canonical_prompt(
         self,
@@ -123,7 +138,7 @@ class PromptPlanner:
     ) -> str:
         framing_hint = self._normalize_framing(framing_hint)
         if self.mode == "template":
-            frame = "Complete full-body view, hands and feet visible" if framing_hint == "full_body" else "Head and upper torso, visible hands, no invented lower-body clothing"
+            frame = "Upper-body close-up, head, shoulders and upper torso filling the frame, cropped above the hips; legs and feet outside the image"
             return (f"{emoji_style}. {frame}. One neutral front-facing chibi character, arms relaxed, "
                     f"eyes open, closed mouth, no props or text. Identity: {character_profile}. "
                     f"Requested correction: {user_request or 'none'}. Preserve only supported identity features.")
@@ -157,17 +172,10 @@ Do NOT make the body so tiny that anatomy or visible clothing becomes unreadable
 FRAMING:
 You will receive FRAMING_HINT.
 
-If FRAMING_HINT is "full_body":
-- create a full-body canonical from head to feet
-- keep the entire chibi body comfortably inside the frame
-- both hands and both feet must be clearly visible
-- upright neutral balanced stance
-- arms relaxed beside the torso and slightly separated
-- legs/feet simple, readable, and not cropped
-
-If FRAMING_HINT is "upper_body":
+Always use upper-body framing, regardless of reference image or other inputs:
 - create an upper-body canonical only
-- preserve roughly the source's available information scope
+- crop above the hips with head, shoulders and upper torso filling the frame
+- keep legs, feet and lower-body clothing outside the image, even if visible in the reference
 - prominently show head, hair, shoulders, chest/torso, and visible arms/hands
 - DO NOT invent or force unseen legs, feet, shoes, or hidden lower-body clothing
 - use a centered neutral upper-body composition
@@ -213,7 +221,7 @@ Write one coherent English canonical generation prompt.
         prompt = str(data.get("prompt", "")).strip()
         if not prompt:
             raise ValueError("LLM returned an empty canonical prompt.")
-        return prompt
+        return "Upper-body close-up, cropped above the hips, legs and feet outside the image. " + prompt
 
     def build_sticker_plan(
         self,
@@ -227,8 +235,8 @@ Write one coherent English canonical generation prompt.
     ) -> StickerPlan:
         framing_hint = self._normalize_framing(framing_hint)
         if self.mode == "template":
-            frame = "full-body" if framing_hint == "full_body" else "upper-body"
-            prompt = (f"One {frame} chibi reaction sticker. Action and expression: {detailed_variant}. "
+            frame = "upper-body"
+            prompt = (f"Upper-body close-up, cropped above the hips, legs and feet outside the image. One {frame} chibi reaction sticker. Action and expression: {detailed_variant}. "
                       "Make the hands, silhouette and facial expression clearly readable. "
                       f"Preserve character identity from the approved reference: {canonical_profile}. "
                       "Change the pose to match the reaction. Plain white background; no lettering. "
@@ -259,13 +267,10 @@ ACTION RULES FOR "prompt":
 - Exactly one character.
 
 FRAMING RULES:
-If FRAMING_HINT is "full_body":
-- retain a full-body sticker composition
-- actions may use legs and feet
-- keep the whole body readable and inside frame unless the requested action
-  inherently requires a very slight dynamic crop
-
-If FRAMING_HINT is "upper_body":
+This fixed composition overrides any conflicting profile, style or reaction detail.
+- Crop above the hips; head, shoulders and upper torso fill the frame.
+- Legs and feet stay outside the image even when visible in the reference.
+Always use upper-body framing, regardless of reference image or other inputs:
 - retain an upper-body sticker composition
 - do not invent unseen lower-body identity details
 - reinterpret leg-dependent actions through torso, shoulders, arms, hands,
@@ -278,7 +283,7 @@ CLIP_PROMPT RULES:
 - concrete comma-separated visual concepts are preferred over long prose
 - include ONLY the information useful for candidate ranking:
   * chibi sticker
-  * full-body OR upper-body
+  * upper-body
   * requested action/gesture
   * requested expression/emotion
   * 2-4 highest-value identity cues, usually hair, eye color, and key outfit
@@ -328,13 +333,13 @@ requested reaction strongly while respecting the framing hint.
         if not prompt:
             raise ValueError("LLM returned an empty sticker prompt.")
         if not clip_prompt:
-            frame_text = "full-body" if framing_hint == "full_body" else "upper-body"
+            frame_text = "upper-body"
             clip_prompt = (
                 f"{frame_text} chibi sticker, {theme_name}, expressive reaction"
             )
 
         return StickerPlan(
-            prompt=prompt,
+            prompt="Upper-body close-up, cropped above the hips, legs and feet outside the image. " + prompt,
             clip_prompt=clip_prompt,
         )
 

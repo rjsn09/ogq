@@ -17,6 +17,7 @@ from PIL import Image
 
 from canonical_dreamo import DreamOStickerEngine, PromptPlanner
 from sse_stream import generation_queue, job_snapshot, stream_response
+from EmojiGenerator import EmojiGenerator
 
 
 class CanonicalApiService:
@@ -62,7 +63,7 @@ class CanonicalApiService:
         encoded = base64.b64encode(buf.getvalue()).decode("ascii")
         return "data:image/png;base64," + encoded
 
-    def _generator(self) -> Any:
+    def _generator(self) -> EmojiGenerator:
         generator = self.get_generator()
         if generator is None:
             raise RuntimeError("EmojiGenerator is not initialized yet.")
@@ -156,6 +157,16 @@ class CanonicalApiService:
             )
         return result
 
+    @staticmethod
+    def _parse_prompts(targets: list[tuple[int, str]], variant_prompts: str) -> list[tuple[int, str]]:
+        try:
+            prompts = json.loads(variant_prompts) if variant_prompts else {}
+        except (json.JSONDecodeError, TypeError):
+            raise HTTPException(400, "variant_prompts must be a JSON object of strings.")
+        if not isinstance(prompts, dict) or any(not isinstance(value, str) for value in prompts.values()):
+            raise HTTPException(400, "variant_prompts must be a JSON object of strings.")
+        return [(index, prompts.get(str(index), "").strip()) for index, _ in targets]
+
     def _generate_canonical_image(
         self,
         *,
@@ -211,10 +222,7 @@ class CanonicalApiService:
                     original_caption = ""
                     framing_hint = "upper_body"
 
-                configured_frame = os.getenv("OGQ_FRAMING", "upper_body")
-                if configured_frame in {"upper_body", "full_body"}:
-                    # Never invent hidden lower-body clothing from an upper-body source.
-                    framing_hint = "full_body" if configured_frame == "full_body" and framing_hint == "full_body" else "upper_body"
+                framing_hint = "upper_body"
                 original_profile = generator.build_character_profile(
                     original_caption,
                     original_user_text,
@@ -252,8 +260,6 @@ class CanonicalApiService:
                     num_inference_steps=steps,
                     seed=seed,
                 )
-                # The original identity stays authoritative; do not turn generation
-                # mistakes into new identity facts through a second vision call.
                 canonical_analysis = None
                 canonical_profile = original_profile
                 if edit_request.strip():
@@ -299,6 +305,7 @@ class CanonicalApiService:
         img2img_strength: float,
         controlnet_scale: float,
         steps: int,
+        user_prompts: list[tuple[int, str]] | None = None,
     ) -> None:
         try:
             with self.generation_lock:
@@ -322,9 +329,7 @@ class CanonicalApiService:
                     original_profile = canonical[
                         "original_profile"
                     ]
-                    framing_hint = str(
-                        canonical.get("framing", "upper_body")
-                    )
+                    framing_hint = "upper_body"
 
                 base_feature = generator.image_feature(canonical_image) if candidate_count > 1 else None
                 base_seed = (
@@ -335,6 +340,8 @@ class CanonicalApiService:
                 completed = 0
 
                 for index, theme_name in targets:
+                    user_prompt = dict(user_prompts or []).get(index, "")
+                    
                     image_started = time.perf_counter()
                     detailed_variant = self._select_variant(
                         theme_name,
@@ -348,6 +355,7 @@ class CanonicalApiService:
                         detailed_variant=detailed_variant,
                         emoji_style=generator.base_positive,
                         framing_hint=framing_hint,
+                        user_prompt=user_prompt,
                     )
 
                     candidates = engine.generate_candidates(
@@ -512,7 +520,7 @@ class CanonicalApiService:
             return stream_response(request, lambda: self._canonical_snapshot(canonical_id), {"canonical_id": canonical_id, "events_url": events_url})
 
         @self.router.post("/{canonical_id}/generate-set")
-        async def generate_set(canonical_id: str, request: Request, indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), controlnet_scale: float = Form(0.90), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^sse$")):
+        async def generate_set(canonical_id: str, request: Request, indices: str = Form(""), variant_names: str = Form(""), variant_prompts: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), controlnet_scale: float = Form(0.90), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^sse$")):
             self.cleanup()
             with self.canonicals_lock:
                 canonical = self.canonicals.get(canonical_id)
@@ -522,13 +530,14 @@ class CanonicalApiService:
                     raise HTTPException(409, "Approve the canonical first.")
                 canonical["updated_at"] = time.time()
             targets = self._parse_targets(indices, variant_names)
+            user_prompts = self._parse_prompts(targets, variant_prompts)
             if not targets or len(targets) > 24 or len({i for i, _ in targets}) != len(targets):
                 raise HTTPException(400, "Choose 1 to 24 unique generation slots.")
             job_id = str(uuid.uuid4())
             with self.jobs_lock:
                 self.jobs[job_id] = {"status": "running", "completed": 0, "total": len(targets), "images": [], "error": None, "created_at": time.time(), "finished_at": None, "canonical_id": canonical_id}
             try:
-                generation_queue.submit(self._run_sticker_job, job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=img2img_strength, controlnet_scale=controlnet_scale, steps=num_inference_steps)
+                generation_queue.submit(self._run_sticker_job, job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=img2img_strength, controlnet_scale=controlnet_scale, steps=num_inference_steps, user_prompts=user_prompts)
             except Exception:
                 with self.jobs_lock:
                     self.jobs.pop(job_id, None)

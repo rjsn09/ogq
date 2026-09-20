@@ -123,7 +123,7 @@ def print_routes(router, depth=0):
 
 print_routes(app)
 
-def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, candidate_count, steps):
+def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, candidate_count, steps, user_prompts):
     service = canonical_api_service
     try:
         service._run_canonical_job(canonical_id=canonical_id, ref_image=ref_image, original_user_text=character_base, edit_request="", ip_scale=0.6, steps=steps, generation_number=0)
@@ -132,7 +132,7 @@ def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, can
             if item["status"] != "ready":
                 raise RuntimeError(item.get("error") or "Canonical generation failed.")
             item.update(approved=True, status="approved")
-        service._run_sticker_job(job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=0.55, controlnet_scale=0.9, steps=steps)
+        service._run_sticker_job(job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=0.55, controlnet_scale=0.9, steps=steps, user_prompts = user_prompts)
     except Exception as exc:
         logger.exception("Direct sticker set failed")
         with service.jobs_lock:
@@ -140,7 +140,7 @@ def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, can
 
 
 @app.post("/api/generate-set")
-async def create_job(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.5), num_inference_steps: int = Form(0, ge=0, le=50), indices: str = Form(""), variant_names: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), transport: str = Form("sse", pattern="^sse$")):
+async def create_job(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.5), num_inference_steps: int = Form(0, ge=0, le=50), indices: str = Form(""), variant_names: str = Form(""), variant_prompts: str = Form(""), candidate_count: int = Form(1, ge=1, le=4), img2img_strength: float = Form(0.55), transport: str = Form("sse", pattern="^sse$")):
     service = canonical_api_service
     service.cleanup()
     service._generator()
@@ -156,6 +156,7 @@ async def create_job(request: Request, image: Optional[UploadFile] = File(None),
     if ref_image is None and not character_base.strip():
         raise HTTPException(400, "Reference image or character description is required.")
     targets = service._parse_targets(indices, variant_names)
+    user_prompts = service._parse_prompts(targets, variant_prompts)
     if not targets or len(targets) > 24 or len({i for i, _ in targets}) != len(targets):
         raise HTTPException(400, "Choose 1 to 24 unique generation slots.")
     job_id, canonical_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -165,7 +166,7 @@ async def create_job(request: Request, image: Optional[UploadFile] = File(None),
     with service.jobs_lock:
         service.jobs[job_id] = {"status": "running", "completed": 0, "total": len(targets), "images": [], "error": None, "created_at": now, "finished_at": None, "canonical_id": canonical_id}
     try:
-        generation_queue.submit(run_direct_set, job_id, canonical_id, ref_image, character_base.strip(), targets, candidate_count, num_inference_steps)
+        generation_queue.submit(run_direct_set, job_id, canonical_id, ref_image, character_base.strip(), targets, candidate_count, num_inference_steps, user_prompts)
     except Exception:
         with service.jobs_lock:
             service.jobs.pop(job_id, None)
