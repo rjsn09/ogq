@@ -21,17 +21,34 @@ export default function Login({ onSuccess }: LoginProps) {
 
     try {
       if (isSignUp) {
+        // 회원가입 실행
         await createUserWithEmailAndPassword(auth, email, password)
       } else {
+        // 로그인 실행
         await signInWithEmailAndPassword(auth, email, password)
       }
-      if (onSuccess) onSuccess()
+
+      // 로그인/회원가입 성공 즉시 팝업 닫기 트리거
+      if (onSuccess) {
+        onSuccess()
+      }
     } catch (err: any) {
       console.error(err)
-      if (isSignUp) {
-        setError('회원가입 실패: 이메일 형식이나 비밀번호 조건(6자 이상)을 확인하세요.')
+      if (err.code === 'auth/email-already-in-use') {
+        setError('이미 가입된 이메일입니다. 로그인으로 전환합니다.')
+        setIsSignUp(false)
+      } else if (
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/invalid-credential'
+      ) {
+        setError('이메일 또는 비밀번호가 일치하지 않습니다.')
+      } else if (err.code === 'auth/weak-password') {
+        setError('비밀번호는 최소 6자 이상이어야 합니다.')
+      } else if (err.code === 'auth/invalid-email') {
+        setError('올바른 이메일 형식을 입력하세요.')
       } else {
-        setError('로그인 실패: 이메일 또는 비밀번호를 확인하세요.')
+        setError(err.message || '인증에 실패했습니다.')
       }
     } finally {
       setLoading(false)
@@ -48,7 +65,6 @@ export default function Login({ onSuccess }: LoginProps) {
         userSelect: 'none',
       }}
     >
-      {/* 로그인 / 회원가입 폼 박스 */}
       <form
         onSubmit={handleSubmit}
         style={{
@@ -99,9 +115,19 @@ export default function Login({ onSuccess }: LoginProps) {
           </div>
         )}
 
-        {/* 이메일 입력창 */}
+        {/* 이메일 입력 */}
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 10,
+              color: '#059669',
+              fontFamily: 'monospace',
+              marginBottom: 6,
+              letterSpacing: '0.1em',
+              fontWeight: 600,
+            }}
+          >
             아이디 (이메일)
           </label>
           <input
@@ -129,9 +155,19 @@ export default function Login({ onSuccess }: LoginProps) {
           />
         </div>
 
-        {/* 비밀번호 입력창 */}
+        {/* 비밀번호 입력 */}
         <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 10,
+              color: '#059669',
+              fontFamily: 'monospace',
+              marginBottom: 6,
+              letterSpacing: '0.1em',
+              fontWeight: 600,
+            }}
+          >
             비밀번호 {isSignUp && <span style={{ fontSize: 9, color: '#64748b' }}>(6자 이상)</span>}
           </label>
           <input
@@ -183,7 +219,7 @@ export default function Login({ onSuccess }: LoginProps) {
           {loading ? '처리 중...' : isSignUp ? '회원가입 완료' : '로그인'}
         </button>
 
-        {/* 로그인 <-> 회원가입 전환 버튼 */}
+        {/* 전환 링크 버튼 */}
         <div style={{ textAlign: 'center' }}>
           <button
             type="button"
