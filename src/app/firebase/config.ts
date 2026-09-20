@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getAnalytics, isSupported } from "firebase/analytics";
+import { getFirestore } from "firebase/firestore"; // 👈 1. Firestore SDK import 추가
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -16,7 +17,8 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app); // 👈 이 부분이 반드시 있어야 합니다!
+export const auth = getAuth(app);
+export const db = getFirestore(app); // 👈 2. Firestore 인스턴스 export 추가
 
 // 브라우저 환경에서만 Analytics 초기화 (Vercel 서버 빌드 에러 방지)
 export let analytics = null;

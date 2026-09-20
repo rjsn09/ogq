@@ -230,6 +230,7 @@ export default function GeneratedGrid({
               const isSlotGenerating = isGenerating && (generatingIndices ? generatingIndices.has(i) : !img);
               const variant = slotVariants[i] ?? VARIANT_CATALOG[i];
 
+              // 빈 칸 (이미지가 아직 생성되지 않은 슬롯)
               if (!img) {
                 return (
                   <div
@@ -272,7 +273,6 @@ export default function GeneratedGrid({
                           {slotPrompts?.[i]?.prompt ? "프롬프트 수정" : "프롬프트 작성"}
                         </button>
 
-                        {/* Selected indicator */}
                         {isSelected && (
                           <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-sm">
                             <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
@@ -286,6 +286,7 @@ export default function GeneratedGrid({
                 );
               }
 
+              // 이미지가 완성된 슬롯
               return (
                 <div
                   key={i}
@@ -300,13 +301,13 @@ export default function GeneratedGrid({
                   <img src={img} alt={variant?.name} className="w-full h-full object-cover" />
 
                   {isSlotGenerating && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
                       <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                     </div>
                   )}
 
-                  {/* Hover overlay */}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                  {/* 중앙 액션 아이콘 오버레이 (상단 돋보기, 다운로드, 재생성) */}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 z-20">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -339,16 +340,16 @@ export default function GeneratedGrid({
                     )}
                   </div>
 
-                  {/* Variant label / selector (bottom) */}
+                  {/* 👈 핵심 수정: 평소에는 opacity-0으로 숨기고, 마우스를 올릴 때만(group-hover:opacity-100) 표시 */}
                   <div
-                    className="absolute bottom-1 inset-x-1 flex flex-col items-center gap-1"
+                    className="absolute bottom-1 inset-x-1 flex flex-col items-center gap-1 z-30 transition-all duration-200 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <select
                       value={variant.id}
                       disabled={isGenerating}
                       onChange={(e) => onVariantChange(i, e.target.value)}
-                      className="w-[90%] text-[10px] bg-white/90 text-foreground border border-primary/25 rounded-full px-2.5 py-0.5 outline-none truncate text-center hover:border-primary focus:border-primary transition-colors"
+                      className="w-[90%] text-[10px] bg-white/95 text-foreground border border-primary/30 rounded-full px-2 py-0.5 outline-none truncate text-center shadow-md hover:border-primary focus:border-primary transition-colors cursor-pointer"
                       style={{ fontWeight: 600 }}
                     >
                       {VARIANT_CATALOG.map((v) => (
@@ -361,15 +362,15 @@ export default function GeneratedGrid({
                       type="button"
                       disabled={isGenerating}
                       onClick={() => openPrompt(i)}
-                      className="rounded-full bg-card px-2 py-0.5 text-[10px] text-primary hover:underline disabled:opacity-50"
+                      className="rounded-full bg-white/95 px-2 py-0.5 text-[10px] text-primary font-medium hover:underline disabled:opacity-50 shadow-md cursor-pointer"
                     >
                       {slotPrompts?.[i]?.prompt ? "프롬프트 수정" : "프롬프트 작성"}
                     </button>
                   </div>
 
-                  {/* Selected indicator */}
+                  {/* 선택 표시 인디케이터 */}
                   {isSelected && (
-                    <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-sm">
+                    <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-sm z-30">
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
                         <path d="M1 4L4 7L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -419,6 +420,7 @@ export default function GeneratedGrid({
         </button>
       )}
 
+      {/* 프롬프트 모달 */}
       <Dialog open={promptSlot !== null} onOpenChange={(open) => { if (!open) setPromptSlot(null); }}>
         <DialogContent>
           <DialogTitle>
