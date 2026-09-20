@@ -246,7 +246,7 @@ async function readBody(
 
 
   const chunks:
-    Buffer[] = [];
+    Uint8Array[] = [];
 
 
   let totalBytes = 0;
@@ -276,7 +276,7 @@ async function readBody(
     }
 
 
-    chunks.push(buffer);
+    chunks.push(new Uint8Array(buffer));
   }
 
 
@@ -287,9 +287,13 @@ async function readBody(
   }
 
 
-  return new Uint8Array(
-    Buffer.concat(chunks)
-  );
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return body;
 }
 
 
