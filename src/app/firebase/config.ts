@@ -8,6 +8,8 @@ import { getFirestore } from "firebase/firestore";
 
 const api_Key = process.env.FIREBASE_API_KEY ?? "";
 const firebase_domain = process.env.FIREBASE_DOMAIN ?? "";
+console.log(api_key);
+console.log(firebase_domain);
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
