@@ -2,21 +2,17 @@ import React, { useState } from 'react'
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from './firebase/config'
 
-interface LoginModalProps {
-  isOpen: boolean
-  onClose: () => void
+interface LoginProps {
   onSuccess?: () => void
 }
 
-export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
+export default function Login({ onSuccess }: LoginProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null)
-
-  if (!isOpen) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,9 +25,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
       } else {
         await signInWithEmailAndPassword(auth, email, password)
       }
-      // 성공 시 모달 닫기 및 후속 동작 실행
       if (onSuccess) onSuccess()
-      onClose()
     } catch (err: any) {
       console.error(err)
       if (isSignUp) {
@@ -47,22 +41,16 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
   return (
     <div
       style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        position: 'relative',
         userSelect: 'none',
       }}
-      onClick={onClose} // 바깥 영역 클릭 시 닫기
     >
-      {/* 모달 내부 박스 (바깥 클릭 이벤트 전파 방지) */}
+      {/* 로그인 / 회원가입 폼 박스 */}
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
           width: 340,
@@ -70,31 +58,12 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
           background: '#ffffff',
           border: '1px solid #e4e4e7',
           borderRadius: 16,
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
           display: 'flex',
           flexDirection: 'column',
           zIndex: 2,
         }}
       >
-        {/* 우측 상단 닫기(X) 버튼 */}
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            position: 'absolute',
-            top: 16,
-            right: 16,
-            background: 'transparent',
-            border: 'none',
-            fontSize: 18,
-            color: '#71717a',
-            cursor: 'pointer',
-            padding: '4px 8px',
-          }}
-        >
-          ✕
-        </button>
-
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div
             style={{
@@ -102,6 +71,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
               fontWeight: 900,
               letterSpacing: '0.05em',
               fontFamily: 'Inter, sans-serif',
+              whiteSpace: 'nowrap',
               color: '#09090b',
             }}
           >
@@ -129,7 +99,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
           </div>
         )}
 
-        {/* 이메일 입력 */}
+        {/* 이메일 입력창 */}
         <div style={{ marginBottom: 14 }}>
           <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
             아이디 (이메일)
@@ -159,7 +129,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
           />
         </div>
 
-        {/* 비밀번호 입력 */}
+        {/* 비밀번호 입력창 */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', fontSize: 10, color: '#059669', fontFamily: 'monospace', marginBottom: 6, letterSpacing: '0.1em', fontWeight: 600 }}>
             비밀번호 {isSignUp && <span style={{ fontSize: 9, color: '#64748b' }}>(6자 이상)</span>}
@@ -213,7 +183,7 @@ export default function LoginModal({ isOpen, onClose, onSuccess }: LoginModalPro
           {loading ? '처리 중...' : isSignUp ? '회원가입 완료' : '로그인'}
         </button>
 
-        {/* 전환 버튼 */}
+        {/* 로그인 <-> 회원가입 전환 버튼 */}
         <div style={{ textAlign: 'center' }}>
           <button
             type="button"
