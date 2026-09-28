@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { auth } from './firebase/config'
 
+
 interface LoginProps {
   onSuccess?: () => void
 }
@@ -25,7 +26,7 @@ export default function Login({ onSuccess }: LoginProps) {
         await createUserWithEmailAndPassword(auth, email, password)
       } else {
         // 로그인 실행
-        await signInWithEmailAndPassword(auth, email, password)
+        await signInWithEmailAndPassword(auth, email, password) 
       }
 
       // 로그인/회원가입 성공 즉시 팝업 닫기 트리거

@@ -1,10 +1,16 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { auth, db } from "./firebase/config";
 import Login from "./Login";
+import { monitorGeneration, recordVisit } from "./lib/monitoring";
 import TermsConsentModal from "./TermsConsentModal";
-import Home from "./Home"; // 👈 1단계에서 만든 Home 컴포넌트 임포트
+import Home from "./Home";
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
@@ -136,7 +142,6 @@ type PendingGeneration = {
 };
 
 export default function App() {
-  // 🌟 사이트 첫 접속 시 'home'이 먼저 뜨도록 기본값 설정!
   const [currentView, setCurrentView] = useState<"home" | "editor">("home");
 
   const [user, setUser] = useState<any>(null);
@@ -144,32 +149,36 @@ export default function App() {
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [hasAgreedTerms, setHasAgreedTerms] = useState(false);
 
-  // Firestore DB에서 사용자 약관 동의 이력 조회
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        setIsLoginModalOpen(false);
+  const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    setUser(currentUser);
 
-        try {
-          const userDocRef = doc(db, "users", currentUser.uid);
-          const docSnap = await getDoc(userDocRef);
+    if (!currentUser) {
+      setHasAgreedTerms(false);
+      return;
+    }
 
-          if (docSnap.exists() && docSnap.data()?.termsAgreed === true) {
-            setHasAgreedTerms(true);
-          } else {
-            setHasAgreedTerms(false);
-          }
-        } catch (err) {
-          console.error("Firestore 약관 동의 확인 실패:", err);
-          setHasAgreedTerms(false);
-        }
+    setIsLoginModalOpen(false);
+    void recordVisit(currentUser.uid);
+
+    try {
+      const userDocRef = doc(db, "users", currentUser.uid);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists() && docSnap.data()?.termsAgreed === true) {
+        setHasAgreedTerms(true);
       } else {
         setHasAgreedTerms(false);
       }
-    });
-    return () => unsubscribe();
-  }, []);
+
+
+    } catch (err) {
+      console.error("Firestore 사용자 정보 확인 실패:", err);
+      setHasAgreedTerms(false);
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
 
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -266,7 +275,7 @@ export default function App() {
       const controller = new AbortController();
       generationController.current = controller;
       try {
-        await generateOGQImagesFromCanonical(
+        await monitorGeneration(user.uid, request.indices.some((index) => !!generatedImages[index - 1]), controller.signal, () => generateOGQImagesFromCanonical(
           approvedId,
           (count, images) => {
             setProgress(count);
@@ -276,7 +285,7 @@ export default function App() {
           request.variantAssignments,
           request.isPartial ? generatedImages : undefined,
           { signal: controller.signal, userPrompts: request.userPrompts }
-        );
+        ));
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error("이모티콘 생성 실패:", err);
@@ -289,7 +298,7 @@ export default function App() {
         setIsGenerating(false);
       }
     },
-    [generatedImages]
+    [generatedImages, user]
   );
 
   // 생성 버튼 클릭 핸들러
@@ -364,11 +373,11 @@ export default function App() {
       generationController.current?.abort();
       generationController.current = controller;
       try {
-        const result = await createCanonical(
+        const result = await monitorGeneration(user.uid, false, controller.signal, () => createCanonical(
           uploadedImage,
           description || undefined,
           { signal: controller.signal }
-        );
+        ));
 
         if (controller.signal.aborted) return;
         setCanonicalId(result.canonical_id);
@@ -458,7 +467,7 @@ export default function App() {
 
   const handleRegenerateCanonical = useCallback(
     async (editRequest: string) => {
-      if (!canonicalId) return;
+      if (!canonicalId || !user?.uid) return;
 
       setCanonicalBusy(true);
       setCanonicalError(null);
@@ -468,9 +477,9 @@ export default function App() {
         setCanonicalImage(null);
         const controller = new AbortController();
         generationController.current = controller;
-        const result = await regenerateCanonical(canonicalId, editRequest, {
+        const result = await monitorGeneration(user.uid, true, controller.signal, () => regenerateCanonical(canonicalId, editRequest, {
           signal: controller.signal,
-        });
+        }));
         if (controller.signal.aborted) return;
         setCanonicalImage(result.image ?? null);
         setCanonicalStatus(result.status);
@@ -486,7 +495,7 @@ export default function App() {
         setCanonicalBusy(false);
       }
     },
-    [canonicalId]
+    [canonicalId, user]
   );
 
   const handleCloseCanonicalPanel = useCallback(() => {
