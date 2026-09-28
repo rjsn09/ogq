@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "./firebase/config";
 import Login from "./Login";
 import TermsConsentModal from "./TermsConsentModal";
+import Home from "./Home"; // 👈 1단계에서 만든 Home 컴포넌트 임포트
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
@@ -26,14 +27,19 @@ import {
 function Header({
   userEmail,
   onLoginClick,
+  onLogoClick,
 }: {
   userEmail?: string | null;
   onLoginClick: () => void;
+  onLogoClick: () => void;
 }) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-40">
       <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div 
+          className="flex items-center gap-3 cursor-pointer"
+          onClick={onLogoClick}
+        >
           <div className="w-8 h-8 rounded-xl overflow-hidden shadow-sm shadow-primary/30">
             <img
               src="/ogqIcon.png"
@@ -130,6 +136,9 @@ type PendingGeneration = {
 };
 
 export default function App() {
+  // 🌟 사이트 첫 접속 시 'home'이 먼저 뜨도록 기본값 설정!
+  const [currentView, setCurrentView] = useState<"home" | "editor">("home");
+
   const [user, setUser] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -286,19 +295,16 @@ export default function App() {
   // 생성 버튼 클릭 핸들러
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
-      // 1. 비로그인 시 로그인 팝업
       if (!user) {
         setIsLoginModalOpen(true);
         return;
       }
 
-      // 2. Firestore DB 미동의 상태일 때 약관 동의 팝업
       if (!hasAgreedTerms) {
         setIsTermsModalOpen(true);
         return;
       }
 
-      // 3. 필수 입력값 체크
       if (!uploadedImage) {
         alert("1단계: 기준 캐릭터 이미지를 먼저 업로드해 주세요!");
         return;
@@ -395,12 +401,10 @@ export default function App() {
     ]
   );
 
-  // Firestore DB에 영구 저장하는 동의 핸들러
   const handleTermsConfirm = async (allowAiTraining: boolean) => {
     if (!user?.uid) return;
 
     try {
-      // 👈 Firestore DB의 users 컬렉션에 사용자 ID 문서로 영구 저장
       await setDoc(
         doc(db, "users", user.uid),
         {
@@ -415,8 +419,6 @@ export default function App() {
 
       setHasAgreedTerms(true);
       setIsTermsModalOpen(false);
-
-      // 동의 완료 즉시 이모티콘 생성 진행
       handleGenerate();
     } catch (err) {
       console.error("약관 동의 DB 저장 실패:", err);
@@ -494,6 +496,15 @@ export default function App() {
     pendingGenerationRef.current = null;
   }, [canonicalBusy, canonicalStatus]);
 
+  // 🌟 Home에서 검색어나 캐릭터를 선택했을 때 에디터로 넘어가는 핸들러
+  const handleStartFromHome = (presetText?: string) => {
+    if (presetText) {
+      setDescription(presetText);
+      setTitle(presetText.slice(0, 15)); // 제목 자동 기입 보조
+    }
+    setCurrentView("editor");
+  };
+
   const isReady = !!uploadedImage && !!title.trim();
   const uiBusy =
     isGenerating ||
@@ -505,74 +516,96 @@ export default function App() {
       <Header
         userEmail={user?.email}
         onLoginClick={() => setIsLoginModalOpen(true)}
+        onLogoClick={() => setCurrentView("home")} // 로고 누르면 언제든 메인 홈으로!
       />
 
-      {/* 진행 단계 인디케이터 */}
-      <div className="max-w-[1400px] mx-auto px-6 pt-5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <StepBadge step={1} label="이미지 업로드" done={!!uploadedImage} />
-          <span className="text-border text-sm mx-0.5">→</span>
+      {/* 🌟 1. 접속 시 Home 화면이 먼저 뜸 */}
+      {currentView === "home" ? (
+        <Home onStart={handleStartFromHome} />
+      ) : (
+        /* 🌟 2. '만들기' 누른 후 에디터 화면 */
+        <>
+          <div className="max-w-[1400px] mx-auto px-6 pt-4">
+            <button
+              onClick={() => setCurrentView("home")}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 font-medium transition-colors"
+            >
+              ← 메인 소개 화면으로 돌아가기
+            </button>
+          </div>
 
-          <StepBadge step={2} label="정보 입력" done={!!title.trim()} />
-          <span className="text-border text-sm mx-0.5">→</span>
+          <div className="max-w-[1400px] mx-auto px-6 pt-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <StepBadge step={1} label="이미지 업로드" done={!!uploadedImage} />
+              <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge step={3} label="캐릭터 확인" done={!!approvedCanonicalId} />
-          <span className="text-border text-sm mx-0.5">→</span>
+              <StepBadge step={2} label="정보 입력" done={!!title.trim()} />
+              <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge
-            step={4}
-            label="24장 생성"
-            done={generatedImages.filter(Boolean).length === 24}
-          />
-          <span className="text-border text-sm mx-0.5">→</span>
+              <StepBadge step={3} label="캐릭터 확인" done={!!approvedCanonicalId} />
+              <span className="text-border text-sm mx-0.5">→</span>
 
-          <StepBadge step={5} label="다운로드" done={false} />
-        </div>
-      </div>
+              <StepBadge
+                step={4}
+                label="24장 생성"
+                done={generatedImages.filter(Boolean).length === 24}
+              />
+              <span className="text-border text-sm mx-0.5">→</span>
 
-      <main className="max-w-[1400px] mx-auto px-6 py-5">
-        <div
-          className="grid gap-6"
-          style={{ gridTemplateColumns: "420px 1fr" }}
-        >
-          <InputPanel
-            uploadedImage={uploadedImage}
-            setUploadedImage={(value) => {
-              setUploadedImage(value);
-              invalidateCanonical();
-              if (!value) {
-                setGeneratedImages([]);
-                setProgress(0);
-              }
-            }}
-            title={title}
-            setTitle={setTitle}
-            tags={tags}
-            setTags={setTags}
-            description={description}
-            setDescription={setDescription}
-            category={category}
-            setCategory={setCategory}
-            onGenerate={handleGenerate}
-            isGenerating={uiBusy}
-            isReady={isReady}
-          />
+              <StepBadge
+                step={5}
+                label="다운로드"
+                done={generatedImages.filter(Boolean).length === 24}
+              />
+            </div>
+          </div>
 
-          <GeneratedGrid
-            images={generatedImages}
-            slotVariants={slotVariants}
-            slotPrompts={slotPrompts}
-            onPromptChange={handlePromptChange}
-            onVariantChange={handleVariantChange}
-            isGenerating={uiBusy}
-            progress={progress}
-            title={title}
-            onGenerate={handleGenerate}
-            isReady={isReady}
-          />
-        </div>
-      </main>
+          <main className="max-w-[1400px] mx-auto px-6 py-5">
+            <div
+              className="grid gap-6"
+              style={{ gridTemplateColumns: "420px 1fr" }}
+            >
+              <InputPanel
+                uploadedImage={uploadedImage}
+                setUploadedImage={(value) => {
+                  setUploadedImage(value);
+                  invalidateCanonical();
+                  if (!value) {
+                    setGeneratedImages([]);
+                    setProgress(0);
+                  }
+                }}
+                title={title}
+                setTitle={setTitle}
+                tags={tags}
+                setTags={setTags}
+                description={description}
+                setDescription={setDescription}
+                category={category}
+                setCategory={setCategory}
+                onGenerate={handleGenerate}
+                isGenerating={uiBusy}
+                isReady={isReady}
+              />
 
+              <GeneratedGrid
+                images={generatedImages}
+                slotVariants={slotVariants}
+                slotPrompts={slotPrompts}
+                onPromptChange={handlePromptChange}
+                onVariantChange={handleVariantChange}
+                isGenerating={uiBusy}
+                progress={progress}
+                title={title}
+                onGenerate={handleGenerate}
+                isReady={isReady}
+              />
+            </div>
+          </main>
+        </>
+      )}
+
+      {/* 모달 공통 관리 */}
       <CanonicalConfirmPanel
         open={canonicalPanelOpen}
         status={canonicalStatus}
@@ -584,7 +617,6 @@ export default function App() {
         onClose={handleCloseCanonicalPanel}
       />
 
-      {/* 1. 로그인 모달 */}
       {isLoginModalOpen && (
         <div
           style={{
@@ -629,7 +661,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. 이용약관 및 개인정보 처리방침 동의 모달 */}
       <TermsConsentModal
         isOpen={isTermsModalOpen}
         onClose={() => setIsTermsModalOpen(false)}
