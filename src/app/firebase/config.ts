@@ -13,11 +13,11 @@ const firebase_domain = import.meta.env.VITE_FIREBASE_DOMAIN;
 const firebaseConfig = {
   apiKey: api_Key,
   authDomain: firebase_domain,
-  projectId: "vvos-f58b3",
-  storageBucket: "vvos-f58b3.firebasestorage.app",
-  messagingSenderId: "799310100616",
-  appId: "1:799310100616:web:45ae4c1e4be0aa94f2073d",
-  measurementId: "G-8FJ6SB7E5X"
+  projectId: "emojigenerator-f3391",
+  storageBucket: "emojigenerator-f3391.firebasestorage.app",
+  messagingSenderId: "12218394188",
+  appId: "1:12218394188:web:8b06c590f3a812988e36e9",
+  measurementId: "G-FHQQJ0V60N"
 };
 
 // Initialize Firebase
