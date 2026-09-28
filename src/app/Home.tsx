@@ -1,54 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 interface HomeProps {
   onStart: (presetText?: string) => void;
   onOpenTerms?: () => void;
 }
 
-// 깃허브 이미지를 불러오기 전이나 로딩 중일 때 표시할 기본 백업 이미지
-const FALLBACK_WALL = [
-  "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=300&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1563089145-599997674d42?w=300&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=300&auto=format&fit=crop&q=80",
-];
+// public/img 폴더에 업로드된 1.png ~ 24.png 파일 직접 매핑
+const DC_CON_WALL = Array.from({ length: 24 }, (_, i) => `/img/${i + 1}.png`);
 
 export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [keyword, setKeyword] = useState("");
   const [activeTab, setActiveTab] = useState("전체");
-
-  // 🌟 깃허브 폴더에서 실시간으로 불러온 이미지 목록
-  const [githubImages, setGithubImages] = useState<string[]>(FALLBACK_WALL);
-
-  useEffect(() => {
-    const fetchGithubRepoImages = async () => {
-      try {
-        // Bluemon7894/ogq 저장소의 src/app/img 경로 조회
-        const res = await fetch(
-          "https://api.github.com/repos/Bluemon7894/ogq/contents/src/app/img"
-        );
-        const data = await res.json();
-
-        if (Array.isArray(data)) {
-          // 이미지 파일(png, jpg, webp, gif 등)만 골라내어 다운로드 주소 추출
-          const validImages = data
-            .filter((item: any) =>
-              /\.(png|jpe?g|gif|webp|svg)$/i.test(item.name)
-            )
-            .map((item: any) => item.download_url);
-
-          if (validImages.length > 0) {
-            setGithubImages(validImages);
-          }
-        }
-      } catch (err) {
-        console.error("깃허브 이미지 로드 실패:", err);
-      }
-    };
-
-    fetchGithubRepoImages();
-  }, []);
 
   const presets = [
     { title: "필수 감정 세트", desc: "기쁨, 분노, 슬픔, 멘붕 등 실시간 소통 세트", prompt: "귀여운 2D 치비 필수 감정 표현 세트", icon: "✨" },
@@ -103,13 +65,8 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     },
   ];
 
-  // 롤링 행에 빈틈이 없도록 최소 12개 이상으로 반복 복제
-  const rollingList =
-    githubImages.length > 0
-      ? Array(Math.ceil(15 / githubImages.length) + 1)
-          .fill(githubImages)
-          .flat()
-      : FALLBACK_WALL;
+  // 무한 롤링 트랙에 빈틈이 없도록 2벌 연결
+  const rollingList = [...DC_CON_WALL, ...DC_CON_WALL];
 
   return (
     <div className="w-full bg-background text-foreground overflow-x-hidden">
@@ -136,64 +93,63 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         }
       `}</style>
 
-      {/* 1. 깃허브 이미지 기반 무한 롤링 히어로 */}
+      {/* 1. 디시콘 대각선 교차 롤링 히어로 섹션 */}
       <section className="relative min-h-[700px] flex items-center justify-center overflow-hidden">
-        
         <div 
           className="absolute inset-0 pointer-events-none scale-125 flex flex-col justify-center gap-4 select-none"
           style={{ transform: "rotate(-8deg)", opacity: 0.85 }}
         >
           {/* 1행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
-            {rollingList.map((imgUrl, i) => (
+            {rollingList.map((src, i) => (
               <div key={`r1-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
-                <img src={imgUrl} alt="dccon" className="w-full h-full object-cover" />
+                <img src={src} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 2행: 우측 이동 (교차) */}
           <div className="row-move-right flex gap-4">
-            {rollingList.slice().reverse().map((imgUrl, i) => (
+            {rollingList.slice().reverse().map((src, i) => (
               <div key={`r2-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
-                <img src={imgUrl} alt="dccon" className="w-full h-full object-cover" />
+                <img src={src} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 3행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
-            {rollingList.map((imgUrl, i) => (
+            {rollingList.map((src, i) => (
               <div key={`r3-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
-                <img src={imgUrl} alt="dccon" className="w-full h-full object-cover" />
+                <img src={src} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 4행: 우측 이동 (교차) */}
           <div className="row-move-right flex gap-4">
-            {rollingList.slice().reverse().map((imgUrl, i) => (
+            {rollingList.slice().reverse().map((src, i) => (
               <div key={`r4-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
-                <img src={imgUrl} alt="dccon" className="w-full h-full object-cover" />
+                <img src={src} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 5행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
-            {rollingList.map((imgUrl, i) => (
+            {rollingList.map((src, i) => (
               <div key={`r5-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
-                <img src={imgUrl} alt="dccon" className="w-full h-full object-cover" />
+                <img src={src} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
         </div>
 
-        {/* 배경 투명도 레이어 */}
+        {/* 배경 반투명 오버레이 */}
         <div className="absolute inset-0 bg-background/45 backdrop-blur-[1px]" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50" />
 
-        {/* 중앙 인터랙션 헤드라인 */}
+        {/* 중앙 카피 & 시작 바 */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-background/90 border border-primary/30 text-primary text-xs font-semibold mb-6 shadow-md backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
