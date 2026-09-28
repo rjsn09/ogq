@@ -5,27 +5,26 @@ interface HomeProps {
   onOpenTerms?: () => void;
 }
 
-// 배경용 디시콘/이모티콘 이미지 셋
-const STICKER_WALL = [
-  "https://api.iconify.design/fluent-emoji:grinning-face-with-smiling-eyes.svg",
-  "https://api.iconify.design/fluent-emoji:smiling-face-with-heart-eyes.svg",
-  "https://api.iconify.design/fluent-emoji:partying-face.svg",
-  "https://api.iconify.design/fluent-emoji:face-with-tears-of-joy.svg",
-  "https://api.iconify.design/fluent-emoji:cat-face.svg",
-  "https://api.iconify.design/fluent-emoji:bear.svg",
-  "https://api.iconify.design/fluent-emoji:rabbit-face.svg",
-  "https://api.iconify.design/fluent-emoji:fire.svg",
-  "https://api.iconify.design/fluent-emoji:sparkles.svg",
-  "https://api.iconify.design/fluent-emoji:clapping-hands.svg",
-  "https://api.iconify.design/fluent-emoji:saluting-face.svg",
-  "https://api.iconify.design/fluent-emoji:winking-face-with-tongue.svg",
+// 2번째 이미지 화풍과 유사한 2D 치비/SD 서브컬처 디시콘 이미지 세트
+const DC_CON_WALL = [
+  "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1563089145-599997674d42?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1569701813229-33284b643e3c?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
 ];
 
 export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [keyword, setKeyword] = useState("");
   const [activeTab, setActiveTab] = useState("전체");
 
-  // 상황별 추천 템플릿 세트
   const presets = [
     { title: "필수 감정 세트", desc: "기쁨, 분노, 슬픔, 멘붕 등 실시간 소통 세트", prompt: "귀여운 2D 치비 필수 감정 표현 세트", icon: "✨" },
     { title: "직장인 리액션 세트", desc: "퇴근, 칼퇴, 넵, 확인했습니다 공감 짤", prompt: "직장인 공감 2등신 치비 이모티콘 세트", icon: "💼" },
@@ -33,7 +32,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     { title: "OGQ 마켓 규격 세트", desc: "정방형 투명 배경 최적화 스티커", prompt: "네이버 OGQ 마켓 스티커 제출용 정방형 캐릭터 세트", icon: "📐" },
   ];
 
-  // 추천 캐릭터 프리셋 칩
   const exampleCharacters = [
     { name: "금발 포니테일 소녀", prompt: "1girl, bright blonde hair, long ponytail, blue eyes, cute chibi", emoji: "👧" },
     { name: "안경 쓴 직장인 곰", prompt: "cute bear wearing tie and glasses, office worker, 2sd chibi", emoji: "🐻" },
@@ -41,7 +39,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     { name: "후드티 토끼", prompt: "cute white bunny wearing oversized hoodie, chibi aesthetic", emoji: "🐰" },
   ];
 
-  // 최근 생성 쇼케이스
   const recentCreations = [
     {
       id: 1,
@@ -84,89 +81,87 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
   return (
     <div className="w-full bg-background text-foreground overflow-x-hidden">
       {/* ========================================================================= */}
-      {/* 1. 넷플릭스 구조 + 기존 브랜드 컬러(그린/라이트) 히어로 섹션 */}
+      {/* 1. 디시콘 대각선 롤링 히어로 섹션 (하단 회색 구분선 제거) */}
       {/* ========================================================================= */}
-      <section className="relative min-h-[680px] flex items-center justify-center overflow-hidden border-b border-border">
+      <section className="relative min-h-[680px] flex items-center justify-center overflow-hidden">
         
-        {/* 대각선 틸트(-8도) 회전된 무한 롤링 그리드 */}
+        {/* 대각선 틸트(-8도) 회전된 무한 롤링 디시콘 그리드 */}
         <div 
-          className="absolute inset-0 pointer-events-none opacity-20 dark:opacity-15 scale-125 sm:scale-110 flex flex-col justify-center gap-4"
+          className="absolute inset-0 pointer-events-none opacity-25 dark:opacity-20 scale-125 sm:scale-110 flex flex-col justify-center gap-4"
           style={{ transform: "rotate(-8deg)" }}
         >
           {/* 1행: 좌측 이동 */}
           <div className="flex gap-4 animate-marquee-left">
-            {[...STICKER_WALL, ...STICKER_WALL, ...STICKER_WALL].map((img, i) => (
-              <div key={i} className="w-24 h-32 sm:w-32 sm:h-40 rounded-xl bg-card border border-border flex items-center justify-center p-3 flex-shrink-0 shadow-sm">
-                <img src={img} alt="sticker" className="w-full h-full object-contain filter drop-shadow-sm" />
+            {[...DC_CON_WALL, ...DC_CON_WALL, ...DC_CON_WALL].map((img, i) => (
+              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+                <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
-          {/* 2행: 우측 이동 (지그재그 반대 방향) */}
+          {/* 2행: 우측 이동 */}
           <div className="flex gap-4 animate-marquee-right">
-            {[...STICKER_WALL.slice().reverse(), ...STICKER_WALL.slice().reverse(), ...STICKER_WALL.slice().reverse()].map((img, i) => (
-              <div key={i} className="w-24 h-32 sm:w-32 sm:h-40 rounded-xl bg-card border border-border flex items-center justify-center p-3 flex-shrink-0 shadow-sm">
-                <img src={img} alt="sticker" className="w-full h-full object-contain filter drop-shadow-sm" />
+            {[...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse()].map((img, i) => (
+              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+                <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 3행: 좌측 이동 */}
           <div className="flex gap-4 animate-marquee-left">
-            {[...STICKER_WALL, ...STICKER_WALL, ...STICKER_WALL].map((img, i) => (
-              <div key={i} className="w-24 h-32 sm:w-32 sm:h-40 rounded-xl bg-card border border-border flex items-center justify-center p-3 flex-shrink-0 shadow-sm">
-                <img src={img} alt="sticker" className="w-full h-full object-contain filter drop-shadow-sm" />
+            {[...DC_CON_WALL, ...DC_CON_WALL, ...DC_CON_WALL].map((img, i) => (
+              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+                <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
-          {/* 4행: 우측 이동 (지그재그 반대 방향) */}
+          {/* 4행: 우측 이동 */}
           <div className="flex gap-4 animate-marquee-right">
-            {[...STICKER_WALL.slice().reverse(), ...STICKER_WALL.slice().reverse(), ...STICKER_WALL.slice().reverse()].map((img, i) => (
-              <div key={i} className="w-24 h-32 sm:w-32 sm:h-40 rounded-xl bg-card border border-border flex items-center justify-center p-3 flex-shrink-0 shadow-sm">
-                <img src={img} alt="sticker" className="w-full h-full object-contain filter drop-shadow-sm" />
+            {[...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse()].map((img, i) => (
+              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+                <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 5행: 좌측 이동 */}
           <div className="flex gap-4 animate-marquee-left">
-            {[...STICKER_WALL, ...STICKER_WALL, ...STICKER_WALL].map((img, i) => (
-              <div key={i} className="w-24 h-32 sm:w-32 sm:h-40 rounded-xl bg-card border border-border flex items-center justify-center p-3 flex-shrink-0 shadow-sm">
-                <img src={img} alt="sticker" className="w-full h-full object-contain filter drop-shadow-sm" />
+            {[...DC_CON_WALL, ...DC_CON_WALL, ...DC_CON_WALL].map((img, i) => (
+              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+                <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
         </div>
 
-        {/* 라이트/다크 대응 비네팅 딤드 오버레이 */}
+        {/* 라이트 톤 소프트 비네팅 오버레이 */}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-background/95" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,var(--background)_100%)] opacity-90" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,var(--background)_100%)] opacity-95" />
 
         {/* 중앙 카피 & 시작 바 */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center">
           
-          {/* 얼리버드 배지 (기존 브랜드 그린 톤) */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold mb-6 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
             <span>현재 얼리버드 베타테스터 모집 중 · 전 기능 무료 오픈</span>
           </div>
 
-          {/* 메인 헤드라인 */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.2] mb-4 text-foreground">
             다른 어디에도 없는<br />
             <span className="text-primary">나만의 이모티콘 세트</span>
           </h1>
 
           <p className="text-lg sm:text-xl font-bold text-foreground/90 mb-2">
-            지금 무료로 시작해 나만의 캐릭터 세트를 완성해보세요.
+            지금 무료로 시작하세요. 나만의 캐릭터 세트가 완성됩니다.
           </p>
 
           <p className="text-sm sm:text-base text-muted-foreground mb-8 max-w-xl">
             준비되셨나요? 원하는 캐릭터 키워드를 입력하고 나만의 세트를 바로 만들어보세요.
           </p>
 
-          {/* 브랜드 그린 시작 버튼이 들어간 가로 입력 폼 */}
+          {/* 가로 입력 폼 */}
           <div className="w-full max-w-2xl flex flex-col sm:flex-row gap-2.5 items-stretch justify-center mb-6">
             <div className="relative flex-1">
               <input
@@ -206,9 +201,9 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       </section>
 
       {/* ========================================================================= */}
-      {/* 2. 상황별 추천 템플릿 카드 세트 (기존 테마 적용) */}
+      {/* 2. 상황별 추천 템플릿 카드 세트 (상단 경계선 없이 부드럽게 연결) */}
       {/* ========================================================================= */}
-      <section className="max-w-[1240px] mx-auto px-6 py-14">
+      <section className="max-w-[1240px] mx-auto px-6 pt-4 pb-14">
         <div className="mb-8">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-1">상황별 인기 세트 모아보기</h2>
           <p className="text-xs sm:text-sm text-muted-foreground">자주 쓰이는 테마를 고르면 해당 스타일에 맞춰 바로 생성 세트가 구성됩니다.</p>
@@ -304,7 +299,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       </section>
 
       {/* ========================================================================= */}
-      {/* 4. 공식 서비스 푸터 (기존 톤) */}
+      {/* 4. 공식 서비스 푸터 */}
       {/* ========================================================================= */}
       <footer className="border-t border-border bg-card/50 py-10 text-muted-foreground text-xs">
         <div className="max-w-[1240px] mx-auto px-6">
