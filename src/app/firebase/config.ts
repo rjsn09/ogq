@@ -23,7 +23,9 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// This project's database is named "default" (distinct from Firebase's "(default)").
+const firestoreDatabaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID?.trim() || "default";
+export const db = getFirestore(app, firestoreDatabaseId);
 
 // 브라우저 환경에서만 Analytics 초기화 (Vercel 서버 빌드 에러 방지)
 export let analytics = null;
