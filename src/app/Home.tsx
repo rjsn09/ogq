@@ -5,20 +5,18 @@ interface HomeProps {
   onOpenTerms?: () => void;
 }
 
-// 2번째 이미지 화풍과 유사한 2D 치비/SD 서브컬처 디시콘 이미지 세트
+// 2D 치비/디시콘 스타일 샘플 이미지 세트
 const DC_CON_WALL = [
-  "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1563089145-599997674d42?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1569701813229-33284b643e3c?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1563089145-599997674d42?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1569701813229-33284b643e3c?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=300&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=300&auto=format&fit=crop&q=80",
 ];
 
 export default function Home({ onStart, onOpenTerms }: HomeProps) {
@@ -80,88 +78,112 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
 
   return (
     <div className="w-full bg-background text-foreground overflow-x-hidden">
+      {/* 💡 외부 CSS 파일 의존 없이 무조건 움직이도록 내장한 인라인 애니메이션 키프레임 */}
+      <style>{`
+        @keyframes scroll-left {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        @keyframes scroll-right {
+          0% { transform: translateX(-50%); }
+          100% { transform: translateX(0); }
+        }
+        .row-move-left {
+          display: flex;
+          width: max-content;
+          animation: scroll-left 30s linear infinite !important;
+          will-change: transform;
+        }
+        .row-move-right {
+          display: flex;
+          width: max-content;
+          animation: scroll-right 30s linear infinite !important;
+          will-change: transform;
+        }
+      `}</style>
+
       {/* ========================================================================= */}
-      {/* 1. 디시콘 대각선 롤링 히어로 섹션 (하단 회색 구분선 제거) */}
+      {/* 1. 디시콘 대각선 교차 롤링 히어로 섹션 */}
       {/* ========================================================================= */}
-      <section className="relative min-h-[680px] flex items-center justify-center overflow-hidden">
+      <section className="relative min-h-[700px] flex items-center justify-center overflow-hidden">
         
-        {/* 대각선 틸트(-8도) 회전된 무한 롤링 디시콘 그리드 */}
+        {/* 대각선 -8도 틸트 및 뚜렷한 불투명도(opacity: 0.85) 적용 */}
         <div 
-          className="absolute inset-0 pointer-events-none opacity-25 dark:opacity-20 scale-125 sm:scale-110 flex flex-col justify-center gap-4"
-          style={{ transform: "rotate(-8deg)" }}
+          className="absolute inset-0 pointer-events-none scale-125 flex flex-col justify-center gap-4 select-none"
+          style={{ transform: "rotate(-8deg)", opacity: 0.85 }}
         >
           {/* 1행: 좌측 이동 */}
-          <div className="flex gap-4 animate-marquee-left">
+          <div className="row-move-left flex gap-4">
             {[...DC_CON_WALL, ...DC_CON_WALL, ...DC_CON_WALL].map((img, i) => (
-              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+              <div key={`r1-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
                 <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
-          {/* 2행: 우측 이동 */}
-          <div className="flex gap-4 animate-marquee-right">
+          {/* 2행: 우측 이동 (교차) */}
+          <div className="row-move-right flex gap-4">
             {[...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse()].map((img, i) => (
-              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+              <div key={`r2-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
                 <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 3행: 좌측 이동 */}
-          <div className="flex gap-4 animate-marquee-left">
+          <div className="row-move-left flex gap-4">
             {[...DC_CON_WALL, ...DC_CON_WALL, ...DC_CON_WALL].map((img, i) => (
-              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+              <div key={`r3-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
                 <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
-          {/* 4행: 우측 이동 */}
-          <div className="flex gap-4 animate-marquee-right">
+          {/* 4행: 우측 이동 (교차) */}
+          <div className="row-move-right flex gap-4">
             {[...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse(), ...DC_CON_WALL.slice().reverse()].map((img, i) => (
-              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+              <div key={`r4-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
                 <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
 
           {/* 5행: 좌측 이동 */}
-          <div className="flex gap-4 animate-marquee-left">
+          <div className="row-move-left flex gap-4">
             {[...DC_CON_WALL, ...DC_CON_WALL, ...DC_CON_WALL].map((img, i) => (
-              <div key={i} className="w-24 h-24 sm:w-32 sm:h-32 rounded-2xl bg-card border border-border/70 overflow-hidden flex-shrink-0 shadow-sm">
+              <div key={`r5-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
                 <img src={img} alt="dccon" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
         </div>
 
-        {/* 라이트 톤 소프트 비네팅 오버레이 */}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/90 to-background/95" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,var(--background)_100%)] opacity-95" />
+        {/* 배경 디시콘이 뚜렷하게 보이도록 아주 얇은 반투명 레이어만 덮음 */}
+        <div className="absolute inset-0 bg-background/45 backdrop-blur-[1px]" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50" />
 
-        {/* 중앙 카피 & 시작 바 */}
+        {/* 중앙 인터랙션 박스 */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center">
           
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-semibold mb-6 shadow-sm">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-background/90 border border-primary/30 text-primary text-xs font-semibold mb-6 shadow-md backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
             <span>현재 얼리버드 베타테스터 모집 중 · 전 기능 무료 오픈</span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.2] mb-4 text-foreground">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.2] mb-4 text-foreground drop-shadow-md">
             다른 어디에도 없는<br />
             <span className="text-primary">나만의 이모티콘 세트</span>
           </h1>
 
-          <p className="text-lg sm:text-xl font-bold text-foreground/90 mb-2">
+          <p className="text-lg sm:text-xl font-bold text-foreground mb-2 drop-shadow-sm">
             지금 무료로 시작하세요. 나만의 캐릭터 세트가 완성됩니다.
           </p>
 
-          <p className="text-sm sm:text-base text-muted-foreground mb-8 max-w-xl">
+          <p className="text-sm sm:text-base text-muted-foreground font-medium mb-8 max-w-xl">
             준비되셨나요? 원하는 캐릭터 키워드를 입력하고 나만의 세트를 바로 만들어보세요.
           </p>
 
-          {/* 가로 입력 폼 */}
+          {/* 가로 검색 및 시작 바 */}
           <div className="w-full max-w-2xl flex flex-col sm:flex-row gap-2.5 items-stretch justify-center mb-6">
             <div className="relative flex-1">
               <input
@@ -170,12 +192,12 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onStart(keyword)}
                 placeholder="만들고 싶은 캐릭터를 적어보세요 (예: 안경 쓴 아기 토끼)"
-                className="w-full h-14 sm:h-16 px-5 rounded-xl bg-card border-2 border-border text-foreground placeholder:text-muted-foreground text-base sm:text-lg focus:outline-none focus:border-primary shadow-sm transition-all"
+                className="w-full h-14 sm:h-16 px-5 rounded-xl bg-card/95 border-2 border-border text-foreground placeholder:text-muted-foreground text-base sm:text-lg focus:outline-none focus:border-primary shadow-lg backdrop-blur-md transition-all"
               />
             </div>
             <button
               onClick={() => onStart(keyword)}
-              className="h-14 sm:h-16 px-8 rounded-xl bg-primary hover:opacity-90 text-primary-foreground text-lg sm:text-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 flex-shrink-0"
+              className="h-14 sm:h-16 px-8 rounded-xl bg-primary hover:opacity-90 text-primary-foreground text-lg sm:text-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-95 flex-shrink-0"
             >
               <span>시작하기</span>
               <span className="text-2xl leading-none">›</span>
@@ -184,12 +206,12 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
 
           {/* 빠른 예시 캐릭터 선택 칩 */}
           <div className="flex items-center justify-center gap-2 flex-wrap text-xs sm:text-sm">
-            <span className="text-muted-foreground font-medium">인기 캐릭터로 시작:</span>
+            <span className="text-foreground/80 font-semibold drop-shadow-sm">인기 캐릭터로 시작:</span>
             {exampleCharacters.map((c) => (
               <button
                 key={c.name}
                 onClick={() => onStart(c.prompt)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-card hover:border-primary/60 hover:bg-accent text-foreground transition-all shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-card/90 hover:border-primary/60 hover:bg-card text-foreground transition-all shadow-md backdrop-blur-md"
               >
                 <span>{c.emoji}</span>
                 <span>{c.name}</span>
@@ -201,9 +223,9 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       </section>
 
       {/* ========================================================================= */}
-      {/* 2. 상황별 추천 템플릿 카드 세트 (상단 경계선 없이 부드럽게 연결) */}
+      {/* 2. 상황별 추천 템플릿 카드 세트 (상단 구분선 없이 자연스럽게 연결) */}
       {/* ========================================================================= */}
-      <section className="max-w-[1240px] mx-auto px-6 pt-4 pb-14">
+      <section className="max-w-[1240px] mx-auto px-6 pt-6 pb-14">
         <div className="mb-8">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-1">상황별 인기 세트 모아보기</h2>
           <p className="text-xs sm:text-sm text-muted-foreground">자주 쓰이는 테마를 고르면 해당 스타일에 맞춰 바로 생성 세트가 구성됩니다.</p>
