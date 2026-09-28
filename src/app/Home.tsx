@@ -12,11 +12,28 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [keyword, setKeyword] = useState("");
   const [activeTab, setActiveTab] = useState("전체");
 
+  // 설명(desc) 텍스트만 프롬프트로 그대로 전달되도록 매핑
   const presets = [
-    { title: "필수 감정 세트", desc: "기쁨, 분노, 슬픔, 멘붕 등 실시간 소통 세트", prompt: "귀여운 2D 치비 필수 감정 표현 세트", icon: "✨" },
-    { title: "직장인 리액션 세트", desc: "퇴근, 칼퇴, 넵, 확인했습니다 공감 짤", prompt: "직장인 공감 2등신 치비 이모티콘 세트", icon: "💼" },
-    { title: "동물 마스코트 세트", desc: "치즈냥이, 댕댕이, 앙증맞은 동물 마스코트", prompt: "귀여운 치즈 고양이 2등신 마스코트 캐릭터", icon: "🐱" },
-    { title: "OGQ 마켓 규격 세트", desc: "정방형 투명 배경 최적화 스티커", prompt: "네이버 OGQ 마켓 스티커 제출용 정방형 캐릭터 세트", icon: "📐" },
+    { 
+      title: "필수 감정 세트", 
+      desc: "기쁨, 분노, 슬픔, 멘붕 등 실시간 소통 세트", 
+      icon: "✨" 
+    },
+    { 
+      title: "직장인 리액션 세트", 
+      desc: "퇴근, 칼퇴, 넵, 확인했습니다 공감 짤", 
+      icon: "💼" 
+    },
+    { 
+      title: "동물 마스코트 세트", 
+      desc: "치즈냥이, 댕댕이, 앙증맞은 동물 마스코트", 
+      icon: "🐱" 
+    },
+    { 
+      title: "OGQ 마켓 규격 세트", 
+      desc: "정방형 투명 배경 최적화 스티커", 
+      icon: "📐" 
+    },
   ];
 
   const exampleCharacters = [
@@ -205,7 +222,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 2. 템플릿 카드 */}
+      {/* 2. 템플릿 카드 (클릭 시 desc 내용만 전달) */}
       <section className="max-w-[1240px] mx-auto px-6 pt-6 pb-14">
         <div className="mb-8">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-1">상황별 인기 세트 모아보기</h2>
@@ -216,7 +233,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           {presets.map((p) => (
             <div
               key={p.title}
-              onClick={() => onStart(p.prompt)}
+              onClick={() => onStart(p.desc)}
               className="group p-6 rounded-2xl border border-border bg-card hover:border-primary/60 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between"
             >
               <div>
