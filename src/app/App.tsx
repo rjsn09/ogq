@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   doc,
-  getDoc,
+  onSnapshot,
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -30,14 +30,20 @@ import {
   Prompts,
 } from "./utils/imageGenerator";
 
+const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
+
 function Header({
   userEmail,
   onLoginClick,
   onLogoClick,
+  isAdmin,
+  onDashboardClick,
 }: {
   userEmail?: string | null;
   onLoginClick: () => void;
   onLogoClick: () => void;
+  isAdmin: boolean;
+  onDashboardClick: () => void;
 }) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-40">
@@ -78,6 +84,11 @@ function Header({
               >
                 Beta
               </span>
+              {isAdmin && (
+                <button onClick={onDashboardClick} className="px-3 py-1.5 rounded-xl border border-primary/40 text-xs text-primary hover:bg-muted transition-colors">
+                  대시보드
+                </button>
+              )}
               <button
                 onClick={() => signOut(auth)}
                 className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
@@ -142,43 +153,40 @@ type PendingGeneration = {
 };
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<"home" | "editor">("home");
+  const [currentView, setCurrentView] = useState<"home" | "editor" | "dashboard">("home");
 
   const [user, setUser] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [hasAgreedTerms, setHasAgreedTerms] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-    setUser(currentUser);
-
-    if (!currentUser) {
+    let unsubscribeProfile: (() => void) | undefined;
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      unsubscribeProfile?.();
+      setUser(currentUser);
+      setIsAdmin(false);
       setHasAgreedTerms(false);
-      return;
-    }
-
-    setIsLoginModalOpen(false);
-    void recordVisit(currentUser.uid);
-
-    try {
-      const userDocRef = doc(db, "users", currentUser.uid);
-      const docSnap = await getDoc(userDocRef);
-      if (docSnap.exists() && docSnap.data()?.termsAgreed === true) {
-        setHasAgreedTerms(true);
-      } else {
+      setCurrentView((view) => view === "dashboard" ? "home" : view);
+      if (!currentUser) return;
+      setIsLoginModalOpen(false);
+      void recordVisit(currentUser.uid);
+      unsubscribeProfile = onSnapshot(doc(db, "users", currentUser.uid), (snapshot) => {
+        const profile = snapshot.data();
+        const admin = profile?.isAdmin === true;
+        setIsAdmin(admin);
+        setHasAgreedTerms(profile?.termsAgreed === true);
+        if (!admin) setCurrentView((view) => view === "dashboard" ? "home" : view);
+      }, (error) => {
+        console.error("Firestore 사용자 정보 확인 실패:", error);
+        setIsAdmin(false);
         setHasAgreedTerms(false);
-      }
-
-
-    } catch (err) {
-      console.error("Firestore 사용자 정보 확인 실패:", err);
-      setHasAgreedTerms(false);
-    }
-  });
-
-  return () => unsubscribe();
-}, []);
+        setCurrentView((view) => view === "dashboard" ? "home" : view);
+      });
+    });
+    return () => { unsubscribe(); unsubscribeProfile?.(); };
+  }, []);
 
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -524,12 +532,18 @@ export default function App() {
     <div className="min-h-screen bg-background">
       <Header
         userEmail={user?.email}
+        isAdmin={isAdmin}
+        onDashboardClick={() => { if (isAdmin) setCurrentView("dashboard"); }}
         onLoginClick={() => setIsLoginModalOpen(true)}
         onLogoClick={() => setCurrentView("home")} // 로고 누르면 언제든 메인 홈으로!
       />
 
       {/* 🌟 1. 접속 시 Home 화면이 먼저 뜸 */}
-      {currentView === "home" ? (
+      {currentView === "dashboard" && isAdmin && user ? (
+        <Suspense fallback={<p className="p-8" role="status">대시보드 불러오는 중…</p>}>
+          <AdminDashboard uid={user.uid} onBack={() => setCurrentView("home")} />
+        </Suspense>
+      ) : currentView === "home" || currentView === "dashboard" ? (
         <Home onStart={handleStartFromHome} />
       ) : (
         /* 🌟 2. '만들기' 누른 후 에디터 화면 */

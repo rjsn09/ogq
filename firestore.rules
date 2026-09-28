@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function admin() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
+    }
+    match /users/{uid} {
+      allow get: if owner(uid) || admin();
+      allow list: if admin();
+      // Roles are assigned only in the console or by a trusted Admin SDK.
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'termsAgreed', 'termsVersion', 'agreedAt', 'allowAiTraining', 'userEmail', 'isAdmin'
+        ])
+        && request.resource.data.get('isAdmin', false) == false;
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'termsAgreed', 'termsVersion', 'agreedAt', 'allowAiTraining', 'userEmail'
+        ]);
+    }
+    match /user_details/{uid} {
+      allow get: if owner(uid) || admin();
+      allow list: if admin();
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'firstGenerationAt', 'firstVisitAt', 'generationCompleteCount',
+          'generationFailCount', 'generationStartCount', 'lastGenerationAt',
+          'lastVisitAt', 'regenerateCount', 'totalGenerationTimes', 'visitCount'
+        ]);
+    }
+    match /events/{eventId} {
+      allow get: if admin() || (request.auth != null && (
+        eventId.matches('visit_' + request.auth.uid + '_.*')
+        || resource.data.uid == request.auth.uid
+      ));
+      allow list: if admin();
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll(['createdAt', 'sessionId', 'type', 'uid'])
+        && request.resource.data.keys().hasOnly(['createdAt', 'sessionId', 'type', 'uid'])
+        && request.resource.data.sessionId is string
+        && request.resource.data.type in [
+          'visit', 'return_visit', 'generation_start',
+          'generation_complete', 'generation_fail', 'generation_cancel'
+        ]
+        && request.resource.data.createdAt == request.time;
+    }
+  }
+}

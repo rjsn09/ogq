@@ -1,5 +1,6 @@
 import { collection, doc, increment, runTransaction, serverTimestamp, type DocumentData } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { koreaDay } from "./dashboardMetrics";
 
 let sessionId: string | undefined;
 function getSessionId(): string {
@@ -18,10 +19,11 @@ type EventType = "visit" | "generation_start" | "generation_complete" | "generat
 async function record(uid: string, type: EventType, options: { regenerate?: boolean; durationMs?: number } = {}): Promise<void> {
   try {
     const session = getSessionId();
+    const day = koreaDay(Date.now());
     const detailsRef = doc(db, "user_details", uid);
-    // A visit is counted once per signed-in user and tab session, including reloads.
+    // Once per signed-in user, tab session and Korea calendar day, including reloads.
     const eventRef = type === "visit"
-      ? doc(db, "events", `visit_${uid}_${session}`)
+      ? doc(db, "events", `visit_${uid}_${session}_${day}`)
       : doc(collection(db, "events"));
     await runTransaction(db, async (transaction) => {
       const details = await transaction.get(detailsRef);
@@ -47,6 +49,11 @@ async function record(uid: string, type: EventType, options: { regenerate?: bool
       }
       transaction.set(detailsRef, update, { merge: true });
       transaction.set(eventRef, { uid, sessionId: session, type, createdAt: serverTimestamp() });
+      if (type === "visit" && existing.firstVisitAt?.toMillis && koreaDay(existing.firstVisitAt.toMillis()) < day) {
+        transaction.set(doc(db, "events", `return_${uid}_${session}_${day}`), {
+          uid, sessionId: session, type: "return_visit", createdAt: serverTimestamp(),
+        });
+      }
     });
   } catch (error) {
     // Monitoring must not prevent login or image generation.
