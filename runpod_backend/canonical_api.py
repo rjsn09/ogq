@@ -450,7 +450,7 @@ class CanonicalApiService:
             if item is None:
                 return None
             ready = item["status"] in {"ready", "approved"}
-            images = [{"index": 1, "name": "canonical", "image": item["canonical_image"], "framing": item.get("framing"), "canonical_prompt": item.get("canonical_prompt")}] if ready else []
+            images = [{"index": 1, "name": "canonical", "image": item["canonical_image"], "framing": item.get("framing"), "canonical_prompt": item.get("canonical_prompt"), "canonical_profile": item.get("canonical_profile"), "original_profile": item.get("original_profile")}] if ready else []
             return {"status": "done" if ready else item["status"], "images": images, "total": 1, "elapsed_seconds": round(max(0, time.time() - item["updated_at"])), "remaining_seconds": None, "error": item.get("error")}
 
     def _register_routes(self) -> None:
@@ -462,6 +462,38 @@ class CanonicalApiService:
         def cancel_canonical_job(canonical_id: str):
             return cancel_canonical(canonical_id)
 
+        @self.router.post("/restore")
+        async def restore_canonical(image: UploadFile = File(...), original_image: Optional[UploadFile] = File(None), character_base: str = Form("", max_length=10000), canonical_profile: str = Form("", max_length=10000), original_profile: str = Form("", max_length=10000), canonical_prompt: str = Form("", max_length=20000)):
+            self.cleanup()
+            async def read_image(upload):
+                raw = await upload.read(64 * 1024 * 1024 + 1)
+                if len(raw) > 64 * 1024 * 1024:
+                    raise HTTPException(413, "Reference image is too large.")
+                try:
+                    with Image.open(io.BytesIO(raw)) as source:
+                        if source.width * source.height > 16_000_000:
+                            raise HTTPException(413, "Reference image dimensions are too large.")
+                        return source.convert("RGBA")
+                except HTTPException:
+                    raise
+                except Exception:
+                    raise HTTPException(400, "Invalid reference image.")
+            restored = await read_image(image)
+            original = await read_image(original_image) if original_image else restored.copy()
+            profile = original_profile.strip() or character_base.strip() or "Preserve the identity, clothing and colors of the supplied character image."
+            canonical_id = str(uuid.uuid4())
+            now = time.time()
+            with canonicals_lock:
+                canonicals[canonical_id] = {
+                    "status": "approved", "approved": True, "original_image": original,
+                    "original_user_text": character_base.strip(), "original_profile": profile,
+                    "canonical_profile": canonical_profile.strip() or profile,
+                    "canonical_prompt": canonical_prompt, "framing": "upper_body",
+                    "canonical_image": self._pil_to_dataurl(restored), "canonical_image_pil": restored,
+                    "ip_scale": 0.60, "steps": 30, "generation_number": 0,
+                    "error": None, "created_at": now, "updated_at": now,
+                }
+            return {"canonical_id": canonical_id, "approved": True, "status": "approved"}
         @self.router.post("")
         async def create_canonical(request: Request, image: Optional[UploadFile] = File(None), character_base: str = Form(""), ip_scale: float = Form(0.60), num_inference_steps: int = Form(0, ge=0, le=50), transport: str = Form("sse", pattern="^sse$")):
             self.cleanup()

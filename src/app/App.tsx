@@ -15,6 +15,7 @@ import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
 import { useGenerationTask } from "./hooks/useGenerationTask";
+import { ensureApprovedReference, referenceMatches, referenceStorage, type ApprovedReference } from './lib/approvedReference';
 import { GenerationCancelledError } from "../api/sse";
 import ProfileMenu from "./components/ProfileMenu";
 import ProductLibraryDialog from "./components/ProductLibraryDialog";
@@ -252,8 +253,17 @@ export default function App() {
   useEffect(() => () => generationController.current?.abort(), []);
 
   const pendingGenerationRef = useRef<PendingGeneration | null>(null);
+  const approvedReference = useRef<ApprovedReference | null>(null);
+  const referenceProfile = useRef<{ canonicalProfile?: string; originalProfile?: string; prompt?: string }>({});
+  const [referenceReady, setReferenceReady] = useState(false);
+  const referenceVersion = useRef(0);
+  const previousReferenceInputs = useRef({ source: uploadedImage, description });
 
   const invalidateCanonical = useCallback(() => {
+    referenceVersion.current++;
+    approvedReference.current = null;
+    referenceProfile.current = {};
+    if (user?.uid) void referenceStorage(user.uid, 'delete').catch(() => {});
     generationController.current?.abort();
     setCanonicalBusy(false);
     setCanonicalId(null);
@@ -262,11 +272,36 @@ export default function App() {
     setCanonicalError(null);
     setCanonicalPanelOpen(false);
     pendingGenerationRef.current = null;
-  }, []);
+  }, [user?.uid]);
 
   useEffect(() => {
-    invalidateCanonical();
-  }, [description, invalidateCanonical]);
+    const previous = previousReferenceInputs.current;
+    previousReferenceInputs.current = { source: uploadedImage, description };
+    if ((previous.source !== uploadedImage || previous.description.trim() !== description.trim()) && !referenceMatches(approvedReference.current, uploadedImage, description)) invalidateCanonical();
+  }, [description, uploadedImage, invalidateCanonical]);
+
+  useEffect(() => {
+    const version = ++referenceVersion.current;
+    approvedReference.current = null;
+    setCanonicalId(null);
+    setApprovedCanonicalId(null);
+    setCanonicalImage(null);
+    setReferenceReady(false);
+    if (!user?.uid) { setReferenceReady(true); return; }
+    let active = true;
+    void referenceStorage(user.uid, 'read').then(reference => {
+      if (!active || version !== referenceVersion.current || !reference?.image || !reference.source || typeof reference.description !== 'string') return;
+      approvedReference.current = reference;
+      referenceProfile.current = reference;
+      setUploadedImage(reference.source);
+      setDescription(reference.description);
+      setCanonicalImage(reference.image);
+      setCanonicalId(reference.id);
+      setApprovedCanonicalId(reference.id || 'cached-reference');
+      setCanonicalStatus('approved');
+    }).catch(() => {}).finally(() => { if (active) setReferenceReady(true); });
+    return () => { active = false; generationController.current?.abort(); };
+  }, [user?.uid]);
 
   const handleVariantChange = useCallback(
     (slotIndex: number, variantId: string) => {
@@ -312,6 +347,15 @@ export default function App() {
       const controller = new AbortController();
       generationController.current = controller;
       try {
+        if (referenceMatches(approvedReference.current, uploadedImage, description)) {
+          const reference = approvedReference.current!;
+          approvedId = await ensureApprovedReference(reference, controller.signal);
+          if (controller.signal.aborted) return;
+          reference.id = approvedId;
+          setCanonicalId(approvedId);
+          setApprovedCanonicalId(approvedId);
+          if (user?.uid) void referenceStorage(user.uid, 'write', reference).catch(() => {});
+        }
         const results = await monitorGeneration(user.uid, request.indices.some((index) => !!generatedImages[index - 1]), controller.signal, () => generateOGQImagesFromCanonical(
           approvedId,
           (count, images) => {
@@ -340,13 +384,13 @@ export default function App() {
         setGeneratingIndices(new Set());
       }
     },
-    [generatedImages, user, generationTask.begin, currentDraft, autoSave, productLibrary.save]
+    [generatedImages, user, generationTask.begin, currentDraft, autoSave, productLibrary.save, uploadedImage, description]
   );
 
   // 생성 버튼 클릭 핸들러
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
-      if (productLibrary.saving || isGenerating || canonicalBusy || (canonicalPanelOpen && canonicalStatus === "generating")) return;
+      if (!referenceReady || productLibrary.saving || isGenerating || canonicalBusy || (canonicalPanelOpen && canonicalStatus === "generating")) return;
       if (!user) {
         setIsLoginModalOpen(true);
         return;
@@ -427,6 +471,7 @@ export default function App() {
         if (controller.signal.aborted) return;
         setCanonicalId(result.canonical_id);
         setCanonicalImage(result.image ?? null);
+        referenceProfile.current = { canonicalProfile: result.canonical_profile, originalProfile: result.original_profile, prompt: result.canonical_prompt ?? undefined };
         setCanonicalStatus(result.status);
       } catch (err) {
         if (generationController.current?.signal.aborted) return;
@@ -458,6 +503,7 @@ export default function App() {
       canonicalBusy,
       canonicalPanelOpen,
       productLibrary.saving,
+      referenceReady,
     ]
   );
 
@@ -494,6 +540,11 @@ export default function App() {
 
     try {
       await approveCanonical(canonicalId);
+      if (canonicalImage && uploadedImage && user?.uid) {
+        const reference = { source: uploadedImage, description: description.trim(), image: canonicalImage, id: canonicalId, ...referenceProfile.current };
+        approvedReference.current = reference;
+        void referenceStorage(user.uid, 'write', reference).catch(() => {});
+      }
 
       setApprovedCanonicalId(canonicalId);
       setCanonicalStatus("approved");
@@ -514,7 +565,7 @@ export default function App() {
     } finally {
       setCanonicalBusy(false);
     }
-  }, [canonicalId, canonicalStatus, runStickerGeneration]);
+  }, [canonicalId, canonicalStatus, runStickerGeneration, canonicalImage, uploadedImage, description, user?.uid]);
 
   const handleRegenerateCanonical = useCallback(
     async (editRequest: string) => {
@@ -524,6 +575,9 @@ export default function App() {
       setCanonicalError(null);
 
       try {
+        approvedReference.current = null;
+        setApprovedCanonicalId(null);
+        void referenceStorage(user.uid, 'delete').catch(() => {});
         setCanonicalStatus("generating");
         setCanonicalImage(null);
         setProgress(0);
@@ -535,6 +589,7 @@ export default function App() {
         }));
         if (controller.signal.aborted) return;
         setCanonicalImage(result.image ?? null);
+        referenceProfile.current = { canonicalProfile: result.canonical_profile, originalProfile: result.original_profile, prompt: result.canonical_prompt ?? undefined };
         setCanonicalStatus(result.status);
       } catch (err) {
         if (generationController.current?.signal.aborted) return;
@@ -592,6 +647,14 @@ export default function App() {
     setGeneratedImages(data.images);
     setSlotVariants(data.slotVariants);
     setSlotPrompts(data.slotPrompts);
+    if (data.uploadedImage && data.canonicalImage && data.images.some(Boolean)) {
+      const reference = { source: data.uploadedImage, description: data.description.trim(), image: data.canonicalImage, id: null };
+      approvedReference.current = reference;
+      setCanonicalImage(reference.image);
+      setApprovedCanonicalId('cached-reference');
+      setCanonicalStatus('approved');
+      if (user?.uid) void referenceStorage(user.uid, 'write', reference).catch(() => {});
+    }
     setProgress(0);
     setGeneratingIndices(new Set());
     productLibrary.markLoaded(selected.summary);
@@ -601,6 +664,7 @@ export default function App() {
 
   const isReady = !!uploadedImage && !!title.trim();
   const uiBusy =
+    !referenceReady ||
     productLibrary.saving ||
     isGenerating ||
     canonicalBusy ||
@@ -680,7 +744,7 @@ export default function App() {
                 uploadedImage={uploadedImage}
                 setUploadedImage={(value) => {
                   setUploadedImage(value);
-                  invalidateCanonical();
+                  if (value !== uploadedImage) invalidateCanonical();
                   if (!value) {
                     setGeneratedImages([]);
                     setProgress(0);

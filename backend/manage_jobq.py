@@ -132,11 +132,6 @@ def cancel_job(job_id):
         status = job["status"]
         canonical_id = job["canonical_id"]
     jobq.cancel(job_id)
-    if newly_cancelled:
-        with canonicals_lock:
-            canonical = canonicals.get(canonical_id)
-            if canonical and canonical["status"] == "generating":
-                canonical.update(status="cancelled", updated_at=time.time())
     return {"job_id": job_id, "status": status}
 
 

@@ -14,6 +14,8 @@ export type CanonicalStatus = {
   image?: string | null;
   canonical_prompt?: string | null;
   error?: string | null;
+  canonical_profile?: string;
+  original_profile?: string;
 };
 
 export type StickerJobImage = {
@@ -39,16 +41,20 @@ type CanonicalOptions = Pick<StreamOptions, 'signal' | 'baseUrl' | 'onStart' | '
 async function canonicalStream(path: string, options: StreamOptions): Promise<CanonicalStatus> {
   let image: string | undefined;
   let prompt: string | undefined;
+  let canonicalProfile: string | undefined;
+  let originalProfile: string | undefined;
   const result = await streamOGQ(path, {
     ...options,
     onImage: data => {
       if (typeof data.image !== 'string' || !data.image.startsWith('data:image/')) throw new Error('잘못된 캐릭터 이미지입니다.');
       image = data.image;
       prompt = typeof data.canonical_prompt === 'string' ? data.canonical_prompt : undefined;
+      canonicalProfile = typeof data.canonical_profile === 'string' ? data.canonical_profile : undefined;
+      originalProfile = typeof data.original_profile === 'string' ? data.original_profile : undefined;
     },
   });
   if (!image || typeof result.canonical_id !== 'string') throw new Error('캐릭터 결과가 누락되었습니다.');
-  return { canonical_id: result.canonical_id, status: 'ready', approved: false, image, canonical_prompt: prompt };
+  return { canonical_id: result.canonical_id, status: 'ready', approved: false, image, canonical_prompt: prompt, canonical_profile: canonicalProfile, original_profile: originalProfile };
 }
 
 export async function createCanonical(params: {
