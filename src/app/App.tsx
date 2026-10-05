@@ -14,6 +14,13 @@ import Home from "./Home";
 import InputPanel from "./components/InputPanel";
 import GeneratedGrid from "./components/GeneratedGrid";
 import CanonicalConfirmPanel from "./components/CanonicalConfirmPanel";
+import { useGenerationTask } from "./hooks/useGenerationTask";
+import { GenerationCancelledError } from "../api/sse";
+import ProfileMenu from "./components/ProfileMenu";
+import ProductLibraryDialog from "./components/ProductLibraryDialog";
+import ProductSettingsDialog from "./components/ProductSettingsDialog";
+import { useProductLibrary } from "./hooks/useProductLibrary";
+import type { ProductDraft } from "./lib/productArchive";
 import {
   approveCanonical,
   createCanonical,
@@ -38,12 +45,14 @@ function Header({
   onLogoClick,
   isAdmin,
   onDashboardClick,
+  profileMenu,
 }: {
   userEmail?: string | null;
   onLoginClick: () => void;
   onLogoClick: () => void;
   isAdmin: boolean;
   onDashboardClick: () => void;
+  profileMenu?: React.ReactNode;
 }) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-40">
@@ -89,13 +98,7 @@ function Header({
                   대시보드
                 </button>
               )}
-              <button
-                onClick={() => signOut(auth)}
-                className="px-3 py-1.5 rounded-xl border border-border text-xs text-red-400 hover:bg-muted transition-colors font-mono"
-                style={{ fontWeight: 500 }}
-              >
-                로그아웃
-              </button>
+              {profileMenu}
             </>
           ) : (
             <button
@@ -197,6 +200,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
+  const [generatingIndices, setGeneratingIndices] = useState<Set<number>>(new Set());
 
   const [slotVariants, setSlotVariants] = useState<Variant[]>(
     Array.from(
@@ -222,6 +226,28 @@ export default function App() {
   const [canonicalError, setCanonicalError] = useState<string | null>(null);
   const [canonicalBusy, setCanonicalBusy] = useState(false);
 
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [autoSave, setAutoSave] = useState(true);
+  const productLibrary = useProductLibrary(user?.uid, libraryOpen);
+  useEffect(() => {
+    setLibraryOpen(false);
+    setSettingsOpen(false);
+    try { setAutoSave(localStorage.getItem(`ogq:autoSave:${user?.uid ?? ''}`) !== 'false'); }
+    catch { setAutoSave(true); }
+  }, [user?.uid]);
+  const changeAutoSave = (enabled: boolean) => {
+    setAutoSave(enabled);
+    try { localStorage.setItem(`ogq:autoSave:${user?.uid ?? ''}`, String(enabled)); }
+    catch { /* The preference still works for this session. */ }
+  };
+  const currentDraft = useCallback((): ProductDraft => ({
+    title, tags, description, category, uploadedImage, canonicalImage,
+    images: Array.from({ length: 24 }, (_, index) => generatedImages[index] ?? ''),
+    slotVariants, slotPrompts,
+  }), [title, tags, description, category, uploadedImage, canonicalImage, generatedImages, slotVariants, slotPrompts]);
+
+  const generationTask = useGenerationTask();
   const generationController = useRef<AbortController | null>(null);
   useEffect(() => () => generationController.current?.abort(), []);
 
@@ -275,6 +301,9 @@ export default function App() {
     async (approvedId: string, request: PendingGeneration) => {
       setIsGenerating(true);
       setProgress(0);
+      const task = generationTask.begin(request.indices.length);
+      const draft = currentDraft();
+      setGeneratingIndices(new Set(request.indices.map(index => index - 1)));
 
       if (!request.isPartial) {
         setGeneratedImages([]);
@@ -283,19 +312,23 @@ export default function App() {
       const controller = new AbortController();
       generationController.current = controller;
       try {
-        await monitorGeneration(user.uid, request.indices.some((index) => !!generatedImages[index - 1]), controller.signal, () => generateOGQImagesFromCanonical(
+        const results = await monitorGeneration(user.uid, request.indices.some((index) => !!generatedImages[index - 1]), controller.signal, () => generateOGQImagesFromCanonical(
           approvedId,
           (count, images) => {
             setProgress(count);
             setGeneratedImages(images);
+            setGeneratingIndices(new Set(request.indices.slice(count).map(index => index - 1)));
           },
           request.indices,
           request.variantAssignments,
           request.isPartial ? generatedImages : undefined,
-          { signal: controller.signal, userPrompts: request.userPrompts }
+          { signal: controller.signal, userPrompts: request.userPrompts, ...task }
         ));
+        if (autoSave && !controller.signal.aborted) {
+          await productLibrary.save({ ...draft, images: results });
+        }
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || err instanceof GenerationCancelledError) return;
         console.error("이모티콘 생성 실패:", err);
         alert(
           `생성 중 오류가 발생했습니다: ${
@@ -304,14 +337,16 @@ export default function App() {
         );
       } finally {
         setIsGenerating(false);
+        setGeneratingIndices(new Set());
       }
     },
-    [generatedImages, user]
+    [generatedImages, user, generationTask.begin, currentDraft, autoSave, productLibrary.save]
   );
 
   // 생성 버튼 클릭 핸들러
   const handleGenerate = useCallback(
     async (indices?: number[]) => {
+      if (productLibrary.saving || isGenerating || canonicalBusy || (canonicalPanelOpen && canonicalStatus === "generating")) return;
       if (!user) {
         setIsLoginModalOpen(true);
         return;
@@ -376,6 +411,8 @@ export default function App() {
       setCanonicalImage(null);
       setCanonicalError(null);
       setCanonicalBusy(true);
+      setProgress(0);
+      const task = generationTask.begin(1);
 
       const controller = new AbortController();
       generationController.current?.abort();
@@ -384,7 +421,7 @@ export default function App() {
         const result = await monitorGeneration(user.uid, false, controller.signal, () => createCanonical(
           uploadedImage,
           description || undefined,
-          { signal: controller.signal }
+          { signal: controller.signal, ...task }
         ));
 
         if (controller.signal.aborted) return;
@@ -393,6 +430,7 @@ export default function App() {
         setCanonicalStatus(result.status);
       } catch (err) {
         if (generationController.current?.signal.aborted) return;
+        if (err instanceof GenerationCancelledError) { setCanonicalStatus("cancelled"); return; }
         setCanonicalStatus("error");
         setCanonicalError(
           err instanceof Error
@@ -415,6 +453,11 @@ export default function App() {
       canonicalId,
       canonicalStatus,
       runStickerGeneration,
+      generationTask.begin,
+      isGenerating,
+      canonicalBusy,
+      canonicalPanelOpen,
+      productLibrary.saving,
     ]
   );
 
@@ -483,16 +526,19 @@ export default function App() {
       try {
         setCanonicalStatus("generating");
         setCanonicalImage(null);
+        setProgress(0);
+        const task = generationTask.begin(1);
         const controller = new AbortController();
         generationController.current = controller;
         const result = await monitorGeneration(user.uid, true, controller.signal, () => regenerateCanonical(canonicalId, editRequest, {
-          signal: controller.signal,
+          signal: controller.signal, onStart: task.onStart, onProgress: task.onStatus,
         }));
         if (controller.signal.aborted) return;
         setCanonicalImage(result.image ?? null);
         setCanonicalStatus(result.status);
       } catch (err) {
         if (generationController.current?.signal.aborted) return;
+        if (err instanceof GenerationCancelledError) { setCanonicalStatus("cancelled"); return; }
         setCanonicalStatus("error");
         setCanonicalError(
           err instanceof Error
@@ -503,8 +549,19 @@ export default function App() {
         setCanonicalBusy(false);
       }
     },
-    [canonicalId, user]
+    [canonicalId, user, generationTask.begin]
   );
+
+  const handleCancelGeneration = async () => {
+    const controller = generationController.current;
+    if (await generationTask.cancel()) {
+      controller?.abort();
+      if (canonicalPanelOpen && canonicalStatus === "generating") {
+        setCanonicalStatus("cancelled");
+        pendingGenerationRef.current = null;
+      }
+    }
+  };
 
   const handleCloseCanonicalPanel = useCallback(() => {
     if (canonicalStatus === "generating" || canonicalBusy) return;
@@ -522,8 +579,29 @@ export default function App() {
     setCurrentView("editor");
   };
 
+  const handleLoadProduct = () => {
+    const selected = productLibrary.selected;
+    if (!selected || isGenerating || canonicalBusy || productLibrary.saving) return;
+    invalidateCanonical();
+    const data = selected.data;
+    setUploadedImage(data.uploadedImage);
+    setTitle(data.title);
+    setTags(data.tags);
+    setDescription(data.description);
+    setCategory(data.category);
+    setGeneratedImages(data.images);
+    setSlotVariants(data.slotVariants);
+    setSlotPrompts(data.slotPrompts);
+    setProgress(0);
+    setGeneratingIndices(new Set());
+    productLibrary.markLoaded(selected.summary);
+    setLibraryOpen(false);
+    setCurrentView("editor");
+  };
+
   const isReady = !!uploadedImage && !!title.trim();
   const uiBusy =
+    productLibrary.saving ||
     isGenerating ||
     canonicalBusy ||
     (canonicalPanelOpen && canonicalStatus === "generating");
@@ -531,12 +609,22 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background">
       <Header
-        userEmail={user?.email}
+        userEmail={user ? user.email ?? "내 계정" : null}
         isAdmin={isAdmin}
         onDashboardClick={() => { if (isAdmin) setCurrentView("dashboard"); }}
         onLoginClick={() => setIsLoginModalOpen(true)}
-        onLogoClick={() => setCurrentView("home")} // 로고 누르면 언제든 메인 홈으로!
+        onLogoClick={() => setCurrentView("home")}
+        profileMenu={user && <ProfileMenu email={user.email ?? "내 계정"} busy={uiBusy} saving={productLibrary.saving} canSave={!!title.trim() && (!!uploadedImage || generatedImages.some(Boolean))}
+          onSave={() => void productLibrary.save(currentDraft())} onOpenLibrary={() => setLibraryOpen(true)} onSettings={() => setSettingsOpen(true)} onLogout={() => void signOut(auth)} />}
       />
+
+      {(productLibrary.saving || productLibrary.notice || productLibrary.error) && (
+        <div className="mx-auto max-w-[1400px] px-6 pt-4">
+          <div role={productLibrary.error ? "alert" : "status"} className={`rounded-xl border px-4 py-3 text-sm ${productLibrary.error ? "border-destructive/30 bg-destructive/5 text-destructive" : "border-primary/20 bg-primary/5 text-foreground"}`}>
+            {productLibrary.saving ? `상품을 계정에 저장하고 있습니다… ${productLibrary.saveProgress}%` : productLibrary.error ?? productLibrary.notice}
+          </div>
+        </div>
+      )}
 
       {/* 🌟 1. 접속 시 Home 화면이 먼저 뜸 */}
       {currentView === "dashboard" && isAdmin && user ? (
@@ -619,6 +707,16 @@ export default function App() {
                 onVariantChange={handleVariantChange}
                 isGenerating={uiBusy}
                 progress={progress}
+                showProgress={!productLibrary.saving && (isGenerating || canonicalBusy)}
+                generatingIndices={generatingIndices}
+                progressTotal={generationTask.total}
+                elapsedSeconds={generationTask.elapsed}
+                remainingSeconds={generationTask.remaining}
+                canCancel={generationTask.registered}
+                cancelling={generationTask.cancelling}
+                cancelled={generationTask.cancelled}
+                cancelError={generationTask.cancelError}
+                onCancel={() => void handleCancelGeneration()}
                 title={title}
                 onGenerate={handleGenerate}
                 isReady={isReady}
@@ -627,6 +725,10 @@ export default function App() {
           </main>
         </>
       )}
+
+      <ProductLibraryDialog open={libraryOpen && !!user} onOpenChange={setLibraryOpen} products={productLibrary.products} selected={productLibrary.selected} selectedId={productLibrary.selectedId}
+        loading={productLibrary.loading} previewLoading={productLibrary.previewLoading} error={productLibrary.error} onSelect={summary => void productLibrary.select(summary)} onLoad={handleLoadProduct} />
+      <ProductSettingsDialog open={settingsOpen && !!user} onOpenChange={setSettingsOpen} email={user?.email ?? "내 계정"} autoSave={autoSave} onAutoSaveChange={changeAutoSave} />
 
       {/* 모달 공통 관리 */}
       <CanonicalConfirmPanel
@@ -638,6 +740,12 @@ export default function App() {
         onApprove={handleApproveCanonical}
         onRegenerate={handleRegenerateCanonical}
         onClose={handleCloseCanonicalPanel}
+        elapsedSeconds={generationTask.elapsed}
+        remainingSeconds={generationTask.remaining}
+        canCancel={generationTask.registered}
+        cancelling={generationTask.cancelling}
+        cancelError={generationTask.cancelError}
+        onCancel={() => void handleCancelGeneration()}
       />
 
       {isLoginModalOpen && (

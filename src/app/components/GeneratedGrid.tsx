@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { Download, ZoomIn, X, CheckSquare, Square, ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
 import JSZip from "jszip";
+import GenerationProgress from "./GenerationProgress";
 import { VARIANT_CATALOG, DEFAULT_VARIANTS, Variant, Prompts } from "../utils/imageGenerator";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 
@@ -11,7 +12,16 @@ interface GeneratedGridProps {
   onPromptChange?: (slotIndex: number, prompt: string) => void;
   onVariantChange?: (slotIndex: number, variantId: string) => void;
   isGenerating?: boolean;
+  showProgress?: boolean;
   progress?: number;
+  progressTotal?: number;
+  elapsedSeconds?: number;
+  remainingSeconds?: number | null;
+  canCancel?: boolean;
+  cancelling?: boolean;
+  cancelled?: boolean;
+  cancelError?: string | null;
+  onCancel?: () => void;
   generatingIndices?: Set<number>;
   title?: string;
   onGenerate?: (indices?: number[]) => void;
@@ -25,7 +35,16 @@ export default function GeneratedGrid({
   onPromptChange,
   onVariantChange = () => {},
   isGenerating = false,
+  showProgress = isGenerating,
   progress = 0,
+  progressTotal = 24,
+  elapsedSeconds = 0,
+  remainingSeconds = null,
+  canCancel = false,
+  cancelling = false,
+  cancelled = false,
+  cancelError,
+  onCancel = () => {},
   generatingIndices,
   title = "",
   onGenerate,
@@ -197,27 +216,11 @@ export default function GeneratedGrid({
         </div>
       </div>
 
-      {/* Progress bar */}
-      {isGenerating && (
-        <div className="bg-card rounded-2xl border border-border p-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
-              <p className="text-foreground text-sm" style={{ fontWeight: 500 }}>
-                이미지 생성 중...
-              </p>
-            </div>
-            <span className="text-primary text-sm" style={{ fontWeight: 700 }}>
-              {progress}/24
-            </span>
-          </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all duration-300"
-              style={{ width: `${(progress / 24) * 100}%` }}
-            />
-          </div>
-        </div>
+      {showProgress && (
+        <GenerationProgress completed={progress} total={progressTotal} elapsed={elapsedSeconds} remaining={remainingSeconds} registered={canCancel} cancelling={cancelling} error={cancelError} onCancel={onCancel} />
+      )}
+      {!isGenerating && cancelled && (
+        <p role="status" className="rounded-xl bg-muted p-4 text-sm text-muted-foreground">생성을 취소했습니다. 완성된 이미지는 유지되며, 원하는 슬롯을 다시 생성할 수 있습니다.</p>
       )}
 
       {/* Grid */}
@@ -333,7 +336,8 @@ export default function GeneratedGrid({
                           onGenerate([i + 1]);
                         }}
                         title="이 칸만 재생성"
-                        className="w-7 h-7 rounded-full bg-white/90 text-foreground flex items-center justify-center hover:bg-white transition-colors shadow-sm"
+                        disabled={isGenerating || !isReady}
+                        className="w-7 h-7 rounded-full bg-white/90 text-foreground flex items-center justify-center hover:bg-white transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <RotateCw size={13} />
                       </button>

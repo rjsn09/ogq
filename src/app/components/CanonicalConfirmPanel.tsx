@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import GenerationProgress from "./GenerationProgress";
 import type { CanonicalStatusValue } from "../lib/ogqGenerator";
 
 type Props = {
@@ -10,6 +11,12 @@ type Props = {
   onApprove: () => void | Promise<void>;
   onRegenerate: (editRequest: string) => void | Promise<void>;
   onClose: () => void;
+  elapsedSeconds?: number;
+  remainingSeconds?: number | null;
+  canCancel?: boolean;
+  cancelling?: boolean;
+  cancelError?: string | null;
+  onCancel?: () => void;
 };
 
 export default function CanonicalConfirmPanel({
@@ -21,6 +28,12 @@ export default function CanonicalConfirmPanel({
   onApprove,
   onRegenerate,
   onClose,
+  elapsedSeconds = 0,
+  remainingSeconds = null,
+  canCancel = false,
+  cancelling = false,
+  cancelError,
+  onCancel = () => {},
 }: Props) {
   const [editRequest, setEditRequest] = useState("");
 
@@ -95,6 +108,9 @@ export default function CanonicalConfirmPanel({
               />
             )}
 
+            {status === "cancelled" && (
+              <p role="status" className="px-6 text-center text-sm text-muted-foreground">기준 이미지 생성을 취소했습니다. 창을 닫고 다시 생성할 수 있습니다.</p>
+            )}
             {status === "error" && (
               <div className="max-w-md px-6 text-center">
                 <p className="font-semibold text-destructive">
@@ -107,7 +123,8 @@ export default function CanonicalConfirmPanel({
             )}
           </div>
 
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-3">
+            {generating && <GenerationProgress completed={0} total={1} elapsed={elapsedSeconds} remaining={remainingSeconds} registered={canCancel} cancelling={cancelling} error={cancelError} onCancel={onCancel} />}
             <div className="rounded-2xl bg-muted/50 p-4">
               <p className="text-sm font-semibold text-foreground">
                 확인할 부분

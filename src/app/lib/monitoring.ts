@@ -75,7 +75,7 @@ export async function monitorGeneration<T>(uid: string, regenerate: boolean, sig
     await record(uid, signal.aborted ? "generation_cancel" : "generation_complete", { durationMs: Math.round(performance.now() - startedAt) });
     return result;
   } catch (error) {
-    await record(uid, signal.aborted ? "generation_cancel" : "generation_fail", { durationMs: Math.round(performance.now() - startedAt) });
+    await record(uid, signal.aborted || (error instanceof Error && error.name === "GenerationCancelledError") ? "generation_cancel" : "generation_fail", { durationMs: Math.round(performance.now() - startedAt) });
     throw error;
   }
 }

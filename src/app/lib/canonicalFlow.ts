@@ -4,6 +4,7 @@ export type CanonicalStatusValue =
   | "generating"
   | "ready"
   | "approved"
+  | "cancelled"
   | "error";
 
 export type CanonicalStatus = {
@@ -26,14 +27,14 @@ export type StickerJobImage = {
 };
 
 export type StickerJobStatus = {
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   completed: number;
   total: number;
   images: StickerJobImage[];
   error?: string | null;
 };
 
-type CanonicalOptions = Pick<StreamOptions, 'signal' | 'baseUrl'>;
+type CanonicalOptions = Pick<StreamOptions, 'signal' | 'baseUrl' | 'onStart' | 'onProgress'>;
 
 async function canonicalStream(path: string, options: StreamOptions): Promise<CanonicalStatus> {
   let image: string | undefined;

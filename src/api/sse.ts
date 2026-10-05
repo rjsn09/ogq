@@ -29,6 +29,25 @@ export class OGQStreamError extends Error {
   }
 }
 
+export class GenerationCancelledError extends Error {
+  constructor() {
+    super('생성을 취소했습니다.');
+    this.name = 'GenerationCancelledError';
+  }
+}
+
+export async function cancelGeneration(identity: { job_id?: string; canonical_id?: string }, baseUrl?: string): Promise<StreamData> {
+  const path = identity.job_id
+    ? `/api/canonical/generate-set/${encodeURIComponent(identity.job_id)}/cancel`
+    : identity.canonical_id ? `/api/canonical/${encodeURIComponent(identity.canonical_id)}/cancel` : undefined;
+  if (!path) throw new Error('작업을 등록하고 있습니다. 잠시 후 다시 시도해 주세요.');
+  const response = await fetch(apiUrl(path, baseUrl), {
+    method: 'POST', headers: { 'ngrok-skip-browser-warning': 'true' },
+  });
+  if (!response.ok) throw new Error(await responseError(response));
+  return response.json();
+}
+
 const env = (import.meta as ImportMeta & { env?: { VITE_BACKEND_URL?: string; DEV?: boolean } }).env;
 const defaultBase = env?.VITE_BACKEND_URL?.trim() || '';
 
@@ -109,6 +128,7 @@ export interface StreamOptions {
   onStart?: (data: StreamData) => void | Promise<void>;
   onImage?: (data: StreamData) => void | Promise<void>;
   onDone?: (data: StreamData) => void | Promise<void>;
+  onProgress?: (data: StreamData) => void | Promise<void>;
 }
 
 function pause(ms: number, signal?: AbortSignal): Promise<void> {
@@ -162,12 +182,17 @@ export async function streamOGQ(path: string, options: StreamOptions = {}): Prom
         } else if (event.type === 'done') {
           await notify(options.onDone, event.data);
           return event.data;
+        } else if (event.type === 'progress') {
+          await notify(options.onProgress, event.data);
+        } else if (event.type === 'cancelled') {
+          throw new GenerationCancelledError();
         } else if (event.type === 'error') {
           throw new OGQStreamError(event.data.error || '이미지 생성에 실패했습니다.');
         }
       }
       throw new OGQStreamError('완료 전에 연결이 끊겼습니다.', true);
     } catch (error) {
+      if (error instanceof GenerationCancelledError) throw error;
       options.signal?.throwIfAborted();
       const failure = error instanceof OGQStreamError ? error : new OGQStreamError(error instanceof Error ? error.message : '서버 연결 오류', true);
       failure.jobId = identity.job_id;

@@ -55,7 +55,7 @@ def stream_response(request: Request, snapshot: Callable[[], dict | None], ident
     if current is None:
         raise HTTPException(404, "Job not found or expired.")
     count = len(current["images"])
-    terminal = current["status"] in {"done", "error"}
+    terminal = current["status"] in {"done", "error", "cancelled"}
     if cursor < 0 or cursor > count + int(terminal):
         raise HTTPException(400, "Cursor is outside the available event history.")
     if terminal and cursor == count + 1:
@@ -63,8 +63,9 @@ def stream_response(request: Request, snapshot: Callable[[], dict | None], ident
 
     async def events():
         nonlocal cursor
-        yield encode_event("start", {**identity, "total": current["total"], "completed": cursor})
+        yield encode_event("start", {**identity, **progress_snapshot(current), "completed": cursor})
         last_sent = time.monotonic()
+        last_progress = 0.0
         while True:
             if await request.is_disconnected():
                 return
@@ -77,12 +78,15 @@ def stream_response(request: Request, snapshot: Callable[[], dict | None], ident
                 yield encode_event("image", {**identity, **item, "completed": cursor, "total": state["total"]}, cursor)
                 last_sent = time.monotonic()
                 await asyncio.sleep(0)
-            if state["status"] in {"done", "error"}:
+            if state["status"] in {"done", "error", "cancelled"}:
                 payload = {**identity, "completed": cursor, "total": state["total"], "status": state["status"]}
                 if state.get("error"):
                     payload["error"] = state["error"]
                 yield encode_event(state["status"], payload, cursor + 1)
                 return
+            if time.monotonic() - last_progress >= 1.0:
+                yield encode_event("progress", {**identity, **progress_snapshot(state)})
+                last_progress = time.monotonic()
             if time.monotonic() - last_sent >= heartbeat:
                 yield ": keep-alive\n\n"
                 last_sent = time.monotonic()
@@ -96,4 +100,24 @@ def job_snapshot(jobs: dict, lock: threading.Lock, job_id: str):
         job = jobs.get(job_id)
         if job is None:
             return None
-        return {"status": job["status"], "images": list(job["images"]), "total": job["total"], "error": job.get("error")}
+        now = job.get("finished_at") or time.time()
+        completed = len(job["images"])
+        elapsed = max(0, now - job["created_at"])
+        remaining = None
+        last_completed = job.get("last_completed_at")
+        if job["status"] in {"done", "error", "cancelled"}:
+            remaining = 0
+        elif completed and last_completed:
+            average = (last_completed - job["created_at"]) / completed
+            estimate = average * (job["total"] - completed) - (now - last_completed)
+            remaining = round(estimate) if estimate > 0 else None
+        return {"status": job["status"], "images": list(job["images"]), "total": job["total"],
+                "completed": completed, "elapsed_seconds": round(elapsed),
+                "remaining_seconds": remaining, "error": job.get("error")}
+
+
+def progress_snapshot(state):
+    return {"status": state["status"], "total": state["total"],
+            "completed": len(state["images"]),
+            "elapsed_seconds": state.get("elapsed_seconds", 0),
+            "remaining_seconds": state.get("remaining_seconds")}

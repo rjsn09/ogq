@@ -15,6 +15,7 @@ export interface GenerateOptions {
   controlnetScale?: number;
   maxReconnects?: number;
   onStart?: (data: StreamData) => void;
+  onStatus?: (data: StreamData) => void;
 }
 
 // Existing callers may keep the original six arguments.
@@ -57,7 +58,7 @@ export async function generateOGQImages(imageDataUrl: string, onProgress?: (coun
   const path = options.canonicalId ? `/api/canonical/${encodeURIComponent(options.canonicalId)}/generate-set` : '/api/generate-set';
   await streamOGQ(path, {
     form: formData, baseUrl: options.baseUrl, signal: options.signal,
-    maxReconnects: options.maxReconnects, onStart: options.onStart,
+    maxReconnects: options.maxReconnects, onStart: options.onStart, onProgress: options.onStatus,
     onImage: data => {
       if (typeof data.index !== 'number' || !targetSet.has(data.index) || typeof data.image !== 'string' || !data.image.startsWith('data:image/')) throw new Error('잘못된 이미지 결과를 받았습니다.');
       results[data.index - 1] = data.image;

@@ -8,7 +8,7 @@ export type { CanonicalStatus, CanonicalStatusValue } from './canonicalFlow';
 export async function createCanonical(imageDataUrl: string, characterBase?: string, options: GenerateOptions = {}) {
   const response = await fetch(imageDataUrl, { signal: options.signal });
   if (!response.ok) throw new Error('참조 이미지를 읽지 못했습니다.');
-  return createCanonicalFromFile({ image: await response.blob(), characterBase }, options);
+  return createCanonicalFromFile({ image: await response.blob(), characterBase }, { ...options, onProgress: options.onStatus });
 }
 
 export function generateOGQImagesFromCanonical(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from functools import partial
 import logging
 import os
 import threading
@@ -21,7 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
 from canonical_api import install_canonical_api
-from sse_stream import generation_queue, job_snapshot, stream_response
+from sse_stream import job_snapshot, stream_response
+from manage_jobq import canonicals, jobs, canonicals_lock, jobs_lock, jobq, cancel_job
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ogq")
@@ -100,7 +102,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop.set()
-        generation_queue.shutdown()
+        jobq.shutdown()
         if tunnel:
             ngrok.disconnect(tunnel.public_url)
 
@@ -108,6 +110,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 canonical_api_service = install_canonical_api(app=app, get_generator=lambda: generator, generation_lock=generation_lock, variant_prompt_map=VARIANT_PROMPT_MAP, default_order=DEFAULT_ORDER)
+
 def print_routes(router, depth=0):
     indent = "  " * depth
 
@@ -129,17 +132,18 @@ print_routes(app)
 def run_direct_set(job_id, canonical_id, ref_image, character_base, targets, candidate_count, steps):
     service = canonical_api_service
     try:
-        service._run_canonical_job(canonical_id=canonical_id, ref_image=ref_image, original_user_text=character_base, edit_request="", ip_scale=0.6, steps=steps, generation_number=0)
-        with service.canonicals_lock:
-            item = service.canonicals[canonical_id]
+        yield partial(service._run_canonical_job, canonical_id=canonical_id, ref_image=ref_image, original_user_text=character_base, edit_request="", ip_scale=0.6, steps=steps, generation_number=0)
+        with canonicals_lock:
+            item = canonicals[canonical_id]
             if item["status"] != "ready":
                 raise RuntimeError(item.get("error") or "Canonical generation failed.")
             item.update(approved=True, status="approved")
-        service._run_sticker_job(job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=0.55, controlnet_scale=0.9, steps=steps)
+        yield from service._sticker_steps(job_id=job_id, canonical_id=canonical_id, targets=targets, candidate_count=candidate_count, img2img_strength=0.55, controlnet_scale=0.9, steps=steps)
     except Exception as exc:
         logger.exception("Direct sticker set failed")
-        with service.jobs_lock:
-            service.jobs[job_id].update(status="error", error=str(exc), finished_at=time.time())
+        with jobs_lock:
+            if jobs[job_id]["status"] != "cancelled":
+                jobs[job_id].update(status="error", error=str(exc), finished_at=time.time())
 
 
 @app.post("/api/generate-set")
@@ -163,32 +167,35 @@ async def create_job(request: Request, image: Optional[UploadFile] = File(None),
         raise HTTPException(400, "Choose 1 to 24 unique generation slots.")
     job_id, canonical_id = str(uuid.uuid4()), str(uuid.uuid4())
     now = time.time()
-    with service.canonicals_lock:
-        service.canonicals[canonical_id] = {"status": "generating", "approved": False, "original_image": ref_image, "original_user_text": character_base.strip(), "ip_scale": ip_scale, "steps": num_inference_steps, "generation_number": 0, "canonical_image": None, "canonical_image_pil": None, "error": None, "created_at": now, "updated_at": now}
-    with service.jobs_lock:
-        service.jobs[job_id] = {"status": "running", "completed": 0, "total": len(targets), "images": [], "error": None, "created_at": now, "finished_at": None, "canonical_id": canonical_id}
+    with canonicals_lock:
+        canonicals[canonical_id] = {"status": "generating", "approved": False, "original_image": ref_image, "original_user_text": character_base.strip(), "ip_scale": ip_scale, "steps": num_inference_steps, "generation_number": 0, "canonical_image": None, "canonical_image_pil": None, "error": None, "created_at": now, "updated_at": now}
+    with jobs_lock:
+        jobs[job_id] = {"status": "running", "completed": 0, "total": len(targets), "images": [], "error": None, "created_at": now, "finished_at": None, "canonical_id": canonical_id}
     try:
-        generation_queue.submit(run_direct_set, job_id, canonical_id, ref_image, character_base.strip(), targets, candidate_count, num_inference_steps)
+        jobq.submit_steps(run_direct_set(job_id, canonical_id, ref_image, character_base.strip(), targets, candidate_count, num_inference_steps), key=job_id)
     except Exception:
-        with service.jobs_lock:
-            service.jobs.pop(job_id, None)
-        with service.canonicals_lock:
-            service.canonicals.pop(canonical_id, None)
+        with jobs_lock:
+            jobs.pop(job_id, None)
+        with canonicals_lock:
+            canonicals.pop(canonical_id, None)
         raise
     events_url = f"/api/generate-set/{job_id}/events"
-    return stream_response(request, lambda: job_snapshot(service.jobs, service.jobs_lock, job_id), {"job_id": job_id, "events_url": events_url})
+    return stream_response(request, lambda: job_snapshot(jobs, jobs_lock, job_id), {"job_id": job_id, "events_url": events_url})
+
+
+@app.post("/api/generate-set/{job_id}/cancel")
+def cancel_generation(job_id: str):
+    return cancel_job(job_id)
 
 
 @app.get("/api/generate-set/{job_id}/events")
 async def job_events(job_id: str, request: Request, after: int = 0):
-    service = canonical_api_service
-    return stream_response(request, lambda: job_snapshot(service.jobs, service.jobs_lock, job_id), {"job_id": job_id}, after)
+    return stream_response(request, lambda: job_snapshot(jobs, jobs_lock, job_id), {"job_id": job_id}, after)
 
 
 @app.get("/api/generate-set/{job_id}")
 def get_job(job_id: str, since: int = 0):
-    service = canonical_api_service
-    state = job_snapshot(service.jobs, service.jobs_lock, job_id)
+    state = job_snapshot(jobs, jobs_lock, job_id)
     if state is None:
         raise HTTPException(404, "Job not found.")
     return {**state, "completed": len(state["images"]), "images": state["images"][max(0, since):]}
@@ -196,15 +203,9 @@ def get_job(job_id: str, since: int = 0):
 
 @app.get("/api/health")
 def health():
-    service = canonical_api_service
-    with service.jobs_lock:
-        active = sum(j["status"] not in {"done", "error"} for j in service.jobs.values())
+    with jobs_lock:
+        active = sum(j["status"] not in {"done", "error", "cancelled"} for j in jobs.values())
     return {"status": "ok" if generator else "loading", "device": generator.device if generator else "loading", "active_jobs": active}
-
-@app.get("/health-test")
-async def health_test():
-    print("HEALTH TEST HIT", flush=True)
-    return {"ok": True}
 
 
 if __name__ == "__main__":
