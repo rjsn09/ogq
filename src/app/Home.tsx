@@ -15,8 +15,6 @@ import { db } from "./firebase/config";
 
 const DC_CON_WALL = Array.from({ length: 24 }, (_, i) => `/img/${i + 1}.png`);
 
-const OGQ_API_KEY = (import.meta as any).env?.VITE_OGQ_API_KEY as string | undefined;
-
 interface HomeProps {
   onStart: (presetText?: string) => void;
   onOpenTerms?: () => void;
@@ -28,6 +26,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [communitySets, setCommunitySets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // OGQ 실시간 데이터 상태
   const [ogqMarketStyles, setOgqMarketStyles] = useState<any[]>([]);
   const [ogqLoading, setOgqLoading] = useState(true);
 
@@ -38,13 +37,14 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     { name: "후드티 토끼", prompt: "cute white bunny wearing oversized hoodie, chibi aesthetic", emoji: "🐰" },
   ];
 
+  // API 대기 또는 오류 시 화면을 지켜줄 안전 폴백 스타일 4종
   const defaultOgqStyles = [
     {
       id: "ogq-crayon",
       title: "동글동글 크레용 낙서풍",
       ogqRank: "OGQ 인기 1위 스타일",
       tag: "#손그림 #크레용",
-      emoji: "🖍",
+      emoji: "🖍️",
       bgGradient: "from-amber-500/10 to-orange-500/20",
       description: "삐뚤빼뚤 정감 가는 크레용 질감과 따스한 파스텔 톤앤매너",
       stylePrompt: "textured crayon lineart, rough hand-drawn aesthetic, soft warm pastel palette, minimal flat shading, cute doodle sticker",
@@ -134,30 +134,17 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
 
   const rollingList = [...DC_CON_WALL, ...DC_CON_WALL];
 
+  // 🌟 Vercel 프록시(/api/ogq)를 통한 실시간 화풍 데이터 조회 (CORS 해결)
   useEffect(() => {
     let isMounted = true;
 
     async function fetchOgqTrending() {
       setOgqLoading(true);
 
-      if (!OGQ_API_KEY) {
-        if (isMounted) {
-          setOgqMarketStyles(defaultOgqStyles);
-          setOgqLoading(false);
-        }
-        return;
-      }
-
       try {
-        const res = await fetch("https://api.ogq.me/v1/market/stickers/popular?limit=4", {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${OGQ_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        });
+        const res = await fetch("/api/ogq");
 
-        if (!res.ok) throw new Error(`OGQ API Error: ${res.status}`);
+        if (!res.ok) throw new Error(`Proxy Error: ${res.status}`);
 
         const json: any = await res.json();
         const rawList = json.items || json.data || json.content || [];
@@ -196,6 +183,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     };
   }, []);
 
+  // 1. 실시간 랭킹 쿼리 (Firestore popularityScore 정렬)
   useEffect(() => {
     setLoading(true);
 
@@ -259,6 +247,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     }
   }, [activeTab]);
 
+  // ❤️ 좋아요 클릭: +1점 반영
   const handleLike = async (e: React.MouseEvent, setId: string) => {
     e.stopPropagation();
     try {
@@ -278,6 +267,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     }
   };
 
+  // 🚀 이 스타일로 세트 생성하기 클릭: +3점 반영 후 에디터 이동
   const handleSelectSet = async (item: any) => {
     try {
       const setRef = doc(db, "community_sets", item.id);
@@ -289,6 +279,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     onStart(item.prompt);
   };
 
+  // 🎨 OGQ 스타일을 에디터 프롬프트와 조합해 시작
   const handleApplyOgqStyle = (stylePrompt: string) => {
     const finalPrompt = keyword.trim()
       ? `${keyword.trim()}, ${stylePrompt}`
