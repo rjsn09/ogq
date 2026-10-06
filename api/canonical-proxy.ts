@@ -8,39 +8,49 @@ import {
   querySuffix,
 } from "../server/ogqProxy.js";
 
-
 export const config = {
   api: {
     bodyParser: false,
   },
 };
 
-
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  // CORS 헤더 허용
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
+  }
+
+  const raw = req.query.path;
+
+  // 🌟 [추가] Home.tsx에서 호출할 OGQ 인기 마켓 스티커 전용 라우팅
+  if (raw === "ogq-popular") {
+    const suffix = querySuffix(req, ["path", "...path"]);
+    const targetPath = `/v1/market/stickers/popular${suffix || "?limit=4"}`;
+    console.log("[OGQ POPULAR PROXY]", { targetPath });
+    await proxyOGQ(req, res, targetPath);
+    return;
+  }
+
+  // 👇 아래부터는 기존 canonical-proxy 코드 100% 그대로 유지
   if (
     !["GET", "POST"].includes(
       req.method ?? "GET"
     )
   ) {
-    res.setHeader(
-      "Allow",
-      "GET, POST"
-    );
-
+    res.setHeader("Allow", "GET, POST");
     res.status(405).json({
       error: "Method not allowed",
     });
-
     return;
   }
-
-
-  // vercel.json forwards nested canonical routes to this concrete function.
-  const raw = req.query.path;
-
 
   const parts =
     Array.isArray(raw)
@@ -48,7 +58,6 @@ export default async function handler(
       : typeof raw === "string" && raw.length > 0
         ? raw.split("/")
         : [];
-
 
   if (
     parts.some(
@@ -59,21 +68,14 @@ export default async function handler(
     res.status(400).json({
       error: "잘못된 canonical 경로입니다.",
     });
-
     return;
   }
-
 
   const path =
     parts
       .map(encodeURIComponent)
       .join("/");
 
-
-  /*
-   * catch-all parameter는 backend query에
-   * 절대로 전달하면 안 된다.
-   */
   const suffix =
     querySuffix(
       req,
@@ -82,7 +84,6 @@ export default async function handler(
         "...path",
       ]
     );
-
 
   console.log(
     "[CANONICAL PROXY]",
@@ -93,7 +94,6 @@ export default async function handler(
         `/api/canonical${path ? `/${path}` : ""}${suffix}`,
     }
   );
-
 
   await proxyOGQ(
     req,
