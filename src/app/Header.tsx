@@ -57,10 +57,11 @@ export default function Header({
           className="flex items-center gap-3 cursor-pointer"
           onClick={onLogoClick}
         >
-          <div className="w-8 h-8 rounded-xl overflow-hidden shadow-sm shadow-primary/30">
+          {/* 이미지 외곽선이 잘리지 않도록 크기 보존 및 object-contain 적용 */}
+          <div className="w-8 h-8 flex items-center justify-center">
             <img
               src="/moamoji.png"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain drop-shadow-sm"
               alt="moamoji"
             />
           </div>
