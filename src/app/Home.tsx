@@ -16,6 +16,9 @@ import { db } from "./firebase/config";
 // public/img 폴더에 업로드된 1.png ~ 24.png 파일 직접 매핑
 const DC_CON_WALL = Array.from({ length: 24 }, (_, i) => `/img/${i + 1}.png`);
 
+// Vercel / Vite 환경 변수에서 OGQ API 키 로드
+const OGQ_API_KEY = import.meta.env.VITE_OGQ_API_KEY;
+
 interface HomeProps {
   onStart: (presetText?: string) => void;
   onOpenTerms?: () => void;
@@ -27,12 +30,60 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [communitySets, setCommunitySets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 🌟 OGQ 실시간 화풍 데이터 상태
+  const [ogqMarketStyles, setOgqMarketStyles] = useState<any[]>([]);
+  const [ogqLoading, setOgqLoading] = useState(true);
+
   // 상단 빠른 시작 예시 캐릭터
   const exampleCharacters = [
     { name: "금발 포니테일 소녀", prompt: "1girl, bright blonde hair, long ponytail, blue eyes, cute chibi", emoji: "👧" },
     { name: "안경 쓴 직장인 곰", prompt: "cute bear wearing tie and glasses, office worker, 2sd chibi", emoji: "🐻" },
     { name: "말랑 치즈 고양이", prompt: "cute orange tabby cat, big round eyes, kawaii sticker", emoji: "🐱" },
     { name: "후드티 토끼", prompt: "cute white bunny wearing oversized hoodie, chibi aesthetic", emoji: "🐰" },
+  ];
+
+  // OGQ API 연결 전/대기 시 보여줄 안전 기본 스타일
+  const defaultOgqStyles = [
+    {
+      id: "ogq-crayon",
+      title: "동글동글 크레용 낙서풍",
+      ogqRank: "OGQ 인기 1위 스타일",
+      tag: "#손그림 #크레용",
+      emoji: "🖍️",
+      bgGradient: "from-amber-500/10 to-orange-500/20",
+      description: "삐뚤빼뚤 정감 가는 크레용 질감과 따스한 파스텔 톤앤매너",
+      stylePrompt: "textured crayon lineart, rough hand-drawn aesthetic, soft warm pastel palette, minimal flat shading, cute doodle sticker",
+    },
+    {
+      id: "ogq-bold-chibi",
+      title: "선명한 굵은선 치비 캐릭터",
+      ogqRank: "OGQ 누적 판매 TOP",
+      tag: "#선명한외곽선 #이모티콘정석",
+      emoji: "🎨",
+      bgGradient: "from-emerald-500/10 to-teal-500/20",
+      description: "어떤 배경에서도 뚜렷하게 눈에 띄는 굵은 외곽선과 팝한 컬러감",
+      stylePrompt: "bold clean black outline, 2-head chibi proportion, vibrant flat colors, crisp vector sticker, white stroke border",
+    },
+    {
+      id: "ogq-watercolor",
+      title: "투명한 수채화 감성 파스텔",
+      ogqRank: "블로그 스티커 추천 1위",
+      tag: "#수채화 #블로그감성",
+      emoji: "🌸",
+      bgGradient: "from-sky-500/10 to-indigo-500/20",
+      description: "네이버 블로그 리뷰나 일상 포스팅에 어울리는 은은한 물감 번짐",
+      stylePrompt: "soft watercolor wash, light paper texture, gentle pastel tone, airy dreamy vibe, subtle gradient blending, elegant sticker",
+    },
+    {
+      id: "ogq-retro-pixel",
+      title: "도트 픽셀 레트로 게임풍",
+      ogqRank: "MZ세대 급상승 트렌드",
+      tag: "#픽셀아트 #Y2K",
+      emoji: "👾",
+      bgGradient: "from-purple-500/10 to-pink-500/20",
+      description: "레트로 오락실 감성의 아기자기하고 깜찍한 16-bit 도트 그래픽",
+      stylePrompt: "16-bit cute pixel art, nostalgic game asset, vibrant retro palette, pixel perfect outline, playful arcade sticker",
+    },
   ];
 
   // DB에 데이터가 아직 없을 때 보여줄 기본 목업 데이터 (디자인/화면 유지용)
@@ -89,6 +140,56 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
 
   // 무한 롤링 트랙에 빈틈이 없도록 2벌 연결
   const rollingList = [...DC_CON_WALL, ...DC_CON_WALL];
+
+  // 🌟 OGQ API 데이터 가져오기
+  useEffect(() => {
+    async function fetchOgqTrending() {
+      setOgqLoading(true);
+
+      if (!OGQ_API_KEY) {
+        setOgqMarketStyles(defaultOgqStyles);
+        setOgqLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch("https://api.ogq.me/v1/market/stickers/popular?limit=4", {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${OGQ_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!res.ok) throw new Error(`OGQ API Error: ${res.status}`);
+
+        const json = await res.json();
+        const rawList = json.items || json.data || json.content || [];
+
+        if (rawList.length > 0) {
+          const mapped = rawList.slice(0, 4).map((item: any, idx: number) => ({
+            id: item.artWorkId || item.id || `ogq-${idx}`,
+            title: item.title || item.name || `인기 화풍 #${idx + 1}`,
+            ogqRank: `OGQ 인기 ${idx + 1}위`,
+            tag: item.tags?.length ? `#${item.tags.slice(0, 2).join(" #")}` : "#OGQ인기",
+            thumbnailUrl: item.thumbnailUrl || item.mainImageUrl || item.imageUrl,
+            description: item.description || "OGQ 마켓에서 검증된 실시간 인기 그림체입니다.",
+            stylePrompt: `inspired by OGQ sticker "${item.title || 'style'}", clean vector lineart, vibrant pastel colors, sticker outline`,
+          }));
+          setOgqMarketStyles(mapped);
+        } else {
+          setOgqMarketStyles(defaultOgqStyles);
+        }
+      } catch (err) {
+        console.warn("OGQ API 응답 대기 중 (기본 화풍 템플릿 유지):", err);
+        setOgqMarketStyles(defaultOgqStyles);
+      } finally {
+        setOgqLoading(false);
+      }
+    }
+
+    fetchOgqTrending();
+  }, []);
 
   // 1. 실시간 랭킹 쿼리 (인기 점수 popularityScore 기준 정렬)
   useEffect(() => {
@@ -192,6 +293,14 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       // 목업 클릭 등 실패 시에도 에디터 이동은 정상 동작
     }
     onStart(item.prompt);
+  };
+
+  // 🎨 OGQ 스타일을 에디터 프롬프트와 조합해 시작
+  const handleApplyOgqStyle = (stylePrompt: string) => {
+    const finalPrompt = keyword.trim()
+      ? `${keyword.trim()}, ${stylePrompt}`
+      : stylePrompt;
+    onStart(finalPrompt);
   };
 
   return (
@@ -331,25 +440,96 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 2. 기획 변경 예정 섹션 (상황별 세트 자리 - 추후 교체하기 쉽도록 프레임 유지) */}
-      <section className="max-w-[1240px] mx-auto px-6 pt-10 pb-6">
-        <div className="p-6 rounded-2xl border border-dashed border-border bg-card/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* 🌟 2. [완성] OGQ 마켓 실시간 인기 스타일 참고 & 화풍 복사 섹션 */}
+      <section className="max-w-[1240px] mx-auto px-6 pt-12 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">🚀</span>
-              <h3 className="font-bold text-base text-foreground">신규 테마 추천 & 가이드 영역</h3>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">준비 중</span>
+              <span className="text-xl">🎨</span>
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                OGQ 마켓 인기 화풍 둘러보기
+              </h2>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 font-bold border border-emerald-500/20">
+                OGQ API 연동
+              </span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              기존 '상황별 인기 세트' 대신 들어갈 새로운 기획 항목 자리입니다. 곧 업데이트됩니다.
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              마켓에서 검증된 인기 스티커 화풍을 선택해 내 캐릭터에 그 스타일을 그대로 입혀보세요.
             </p>
           </div>
-          <button 
-            onClick={() => onStart()}
-            className="px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer flex-shrink-0"
+
+          <button
+            onClick={() => onStart(keyword.trim() ? `${keyword.trim()}, cute 2d chibi sticker style` : "cute 2d chibi sticker style")}
+            className="px-4 py-2 rounded-xl bg-card border border-border hover:border-primary/60 hover:text-primary text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
           >
-            자유롭게 직접 만들기 →
+            <span>자유롭게 직접 만들기</span>
+            <span>→</span>
           </button>
+        </div>
+
+        {/* OGQ 카드 4종 그리드 (로딩 스켈레톤 포함) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {ogqLoading ? (
+            [1, 2, 3, 4].map((n) => (
+              <div key={n} className="h-64 rounded-2xl bg-card border border-border animate-pulse p-4 flex flex-col justify-between">
+                <div className="h-36 bg-muted rounded-xl" />
+                <div className="h-4 bg-muted rounded w-2/3" />
+                <div className="h-8 bg-muted rounded" />
+              </div>
+            ))
+          ) : (
+            ogqMarketStyles.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/60 hover:shadow-lg transition-all flex flex-col justify-between group"
+              >
+                {/* 썸네일 영역 */}
+                <div className={`h-40 flex flex-col items-center justify-center relative p-3 border-b border-border overflow-hidden ${
+                  item.thumbnailUrl ? "bg-muted/30" : `bg-gradient-to-br ${item.bgGradient || "from-amber-500/10 to-orange-500/20"}`
+                }`}>
+                  {item.thumbnailUrl ? (
+                    <img
+                      src={item.thumbnailUrl}
+                      alt={item.title}
+                      className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="text-5xl select-none group-hover:scale-110 transition-transform">
+                      {item.emoji || "🎨"}
+                    </span>
+                  )}
+
+                  <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md text-[10px] font-bold border bg-emerald-500/10 text-emerald-600 border-emerald-500/20 backdrop-blur-xs">
+                    {item.ogqRank}
+                  </span>
+
+                  <span className="absolute bottom-2.5 left-2.5 text-[10px] text-muted-foreground bg-background/80 px-2 py-0.5 rounded backdrop-blur-xs font-medium">
+                    {item.tag}
+                  </span>
+                </div>
+
+                {/* 본문 설명 & 버튼 */}
+                <div className="p-4 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-base text-foreground mb-1 group-hover:text-primary transition-colors truncate">
+                      {item.title}
+                    </h4>
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-4">
+                      {item.description}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => handleApplyOgqStyle(item.stylePrompt)}
+                    className="w-full py-2.5 rounded-xl border border-border bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground text-xs font-bold transition-all shadow-xs cursor-pointer text-center"
+                  >
+                    이 화풍으로 내 캐릭터 만들기 →
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
@@ -460,35 +640,4 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-border">
             <div>
               <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-bold text-sm text-foreground">모아모지</span>
-                <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold">BETA</span>
-              </div>
-              <p className="text-muted-foreground">
-                누구나 클릭 한 번으로 나만의 캐릭터 이모티콘 세트를 완성하는 AI 크리에이티브 플랫폼
-              </p>
-            </div>
-
-            <div className="flex items-center gap-5 font-medium">
-              <button onClick={onOpenTerms} className="hover:text-foreground underline underline-offset-4 cursor-pointer">
-                이용약관
-              </button>
-              <span>·</span>
-              <button onClick={onOpenTerms} className="hover:text-foreground underline underline-offset-4 cursor-pointer">
-                개인정보처리방침
-              </button>
-              <span>·</span>
-              <a href="mailto:support@moamoji.com" className="hover:text-foreground underline underline-offset-4">
-                고객문의
-              </a>
-            </div>
-          </div>
-
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2">
-            <div>© 2026 Team BERT. All rights reserved.</div>
-            <div>생성된 세트의 상업적 이용 권리는 라이선스 및 정책 규정에 따릅니다.</div>
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
-}
+                <span className="font-bold text-sm text-
