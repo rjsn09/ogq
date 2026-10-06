@@ -57,7 +57,6 @@ export default function Header({
           className="flex items-center gap-3 cursor-pointer"
           onClick={onLogoClick}
         >
-          {/* 이미지 외곽선이 잘리지 않도록 크기 보존 및 object-contain 적용 */}
           <div className="w-8 h-8 flex items-center justify-center">
             <img
               src="/moamoji.png"
@@ -73,7 +72,7 @@ export default function Header({
               모아모지
             </span>
             <span className="text-muted-foreground text-xs hidden sm:inline">
-              네이버 OGQ 마켓 · 24장 자동 생성
+              네이버 OGQ 마켓연계 · 이모지 세트 생성
             </span>
           </div>
         </div>
