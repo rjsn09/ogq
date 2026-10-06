@@ -11,13 +11,11 @@ import {
   increment,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "./firebase/config";
+import { db } from "../firebase/config";
 
-// public/img 폴더에 업로드된 1.png ~ 24.png 파일 직접 매핑
 const DC_CON_WALL = Array.from({ length: 24 }, (_, i) => `/img/${i + 1}.png`);
 
-// Vercel / Vite 환경 변수에서 OGQ API 키 로드
-const OGQ_API_KEY = import.meta.env.VITE_OGQ_API_KEY;
+const OGQ_API_KEY = (import.meta as any).env?.VITE_OGQ_API_KEY as string | undefined;
 
 interface HomeProps {
   onStart: (presetText?: string) => void;
@@ -30,11 +28,9 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [communitySets, setCommunitySets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 🌟 OGQ 실시간 화풍 데이터 상태
   const [ogqMarketStyles, setOgqMarketStyles] = useState<any[]>([]);
   const [ogqLoading, setOgqLoading] = useState(true);
 
-  // 상단 빠른 시작 예시 캐릭터
   const exampleCharacters = [
     { name: "금발 포니테일 소녀", prompt: "1girl, bright blonde hair, long ponytail, blue eyes, cute chibi", emoji: "👧" },
     { name: "안경 쓴 직장인 곰", prompt: "cute bear wearing tie and glasses, office worker, 2sd chibi", emoji: "🐻" },
@@ -42,7 +38,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     { name: "후드티 토끼", prompt: "cute white bunny wearing oversized hoodie, chibi aesthetic", emoji: "🐰" },
   ];
 
-  // OGQ API 연결 전/대기 시 보여줄 안전 기본 스타일
   const defaultOgqStyles = [
     {
       id: "ogq-crayon",
@@ -86,7 +81,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     },
   ];
 
-  // DB에 데이터가 아직 없을 때 보여줄 기본 목업 데이터 (디자인/화면 유지용)
   const defaultCreations = [
     {
       id: "mock-1",
@@ -138,17 +132,19 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     },
   ];
 
-  // 무한 롤링 트랙에 빈틈이 없도록 2벌 연결
   const rollingList = [...DC_CON_WALL, ...DC_CON_WALL];
 
-  // 🌟 OGQ API 데이터 가져오기
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchOgqTrending() {
       setOgqLoading(true);
 
       if (!OGQ_API_KEY) {
-        setOgqMarketStyles(defaultOgqStyles);
-        setOgqLoading(false);
+        if (isMounted) {
+          setOgqMarketStyles(defaultOgqStyles);
+          setOgqLoading(false);
+        }
         return;
       }
 
@@ -163,42 +159,48 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
 
         if (!res.ok) throw new Error(`OGQ API Error: ${res.status}`);
 
-        const json = await res.json();
+        const json: any = await res.json();
         const rawList = json.items || json.data || json.content || [];
 
-        if (rawList.length > 0) {
-          const mapped = rawList.slice(0, 4).map((item: any, idx: number) => ({
-            id: item.artWorkId || item.id || `ogq-${idx}`,
-            title: item.title || item.name || `인기 화풍 #${idx + 1}`,
-            ogqRank: `OGQ 인기 ${idx + 1}위`,
-            tag: item.tags?.length ? `#${item.tags.slice(0, 2).join(" #")}` : "#OGQ인기",
-            thumbnailUrl: item.thumbnailUrl || item.mainImageUrl || item.imageUrl,
-            description: item.description || "OGQ 마켓에서 검증된 실시간 인기 그림체입니다.",
-            stylePrompt: `inspired by OGQ sticker "${item.title || 'style'}", clean vector lineart, vibrant pastel colors, sticker outline`,
-          }));
-          setOgqMarketStyles(mapped);
-        } else {
+        if (isMounted) {
+          if (Array.isArray(rawList) && rawList.length > 0) {
+            const mapped = rawList.slice(0, 4).map((item: any, idx: number) => ({
+              id: item.artWorkId || item.id || `ogq-${idx}`,
+              title: item.title || item.name || `인기 화풍 #${idx + 1}`,
+              ogqRank: `OGQ 인기 ${idx + 1}위`,
+              tag: item.tags?.length ? `#${item.tags.slice(0, 2).join(" #")}` : "#OGQ인기",
+              thumbnailUrl: item.thumbnailUrl || item.mainImageUrl || item.imageUrl,
+              description: item.description || "OGQ 마켓에서 검증된 실시간 인기 그림체입니다.",
+              stylePrompt: `inspired by OGQ sticker "${item.title || 'style'}", clean vector lineart, vibrant pastel colors, sticker outline`,
+            }));
+            setOgqMarketStyles(mapped);
+          } else {
+            setOgqMarketStyles(defaultOgqStyles);
+          }
+        }
+      } catch {
+        if (isMounted) {
           setOgqMarketStyles(defaultOgqStyles);
         }
-      } catch (err) {
-        console.warn("OGQ API 응답 대기 중 (기본 화풍 템플릿 유지):", err);
-        setOgqMarketStyles(defaultOgqStyles);
       } finally {
-        setOgqLoading(false);
+        if (isMounted) {
+          setOgqLoading(false);
+        }
       }
     }
 
     fetchOgqTrending();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // 1. 실시간 랭킹 쿼리 (인기 점수 popularityScore 기준 정렬)
   useEffect(() => {
     setLoading(true);
 
     try {
       const collectionRef = collection(db, "community_sets");
-      
-      // 최근 7일 필터 기준 시점
       const sevenDaysAgo = Timestamp.fromDate(
         new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
       );
@@ -234,33 +236,29 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             list.sort((a: any, b: any) => (b.popularityScore || 0) - (a.popularityScore || 0));
             setCommunitySets(list);
           } else {
-            // DB에 데이터가 없거나 0개일 때는 탭에 맞게 기본 목업 출력
             const filtered = activeTab === "전체" 
               ? defaultCreations 
-              : defaultCreations.filter(c => c.category === activeTab);
+              : defaultCreations.filter((c) => c.category === activeTab);
             setCommunitySets(filtered.length > 0 ? filtered : defaultCreations);
           }
           setLoading(false);
         },
-        (error) => {
-          console.warn("Firestore 랭킹 구독 실패 (인덱스 생성 전 목업 유지):", error.message);
+        () => {
           const filtered = activeTab === "전체" 
             ? defaultCreations 
-            : defaultCreations.filter(c => c.category === activeTab);
+            : defaultCreations.filter((c) => c.category === activeTab);
           setCommunitySets(filtered);
           setLoading(false);
         }
       );
 
       return () => unsubscribe();
-    } catch (err) {
-      console.error("DB 연동 오류:", err);
+    } catch {
       setCommunitySets(defaultCreations);
       setLoading(false);
     }
   }, [activeTab]);
 
-  // ❤️ 좋아요 클릭: +1점 반영
   const handleLike = async (e: React.MouseEvent, setId: string) => {
     e.stopPropagation();
     try {
@@ -269,8 +267,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         likesCount: increment(1),
         popularityScore: increment(1),
       });
-    } catch (err) {
-      // 로컬 즉시 반영
+    } catch {
       setCommunitySets((prev) =>
         prev.map((item) =>
           item.id === setId
@@ -281,7 +278,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     }
   };
 
-  // 🚀 이 스타일로 세트 생성하기 클릭: +3점 반영 후 에디터 이동
   const handleSelectSet = async (item: any) => {
     try {
       const setRef = doc(db, "community_sets", item.id);
@@ -289,13 +285,10 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         usesCount: increment(1),
         popularityScore: increment(3),
       });
-    } catch (err) {
-      // 목업 클릭 등 실패 시에도 에디터 이동은 정상 동작
-    }
+    } catch {}
     onStart(item.prompt);
   };
 
-  // 🎨 OGQ 스타일을 에디터 프롬프트와 조합해 시작
   const handleApplyOgqStyle = (stylePrompt: string) => {
     const finalPrompt = keyword.trim()
       ? `${keyword.trim()}, ${stylePrompt}`
@@ -328,13 +321,12 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         }
       `}</style>
 
-      {/* 1. 디시콘 대각선 교차 롤링 히어로 섹션 (원래 비주얼 100% 복구) */}
+      {/* 1. 디시콘 대각선 교차 롤링 히어로 섹션 */}
       <section className="relative min-h-[700px] flex items-center justify-center overflow-hidden">
         <div 
           className="absolute inset-0 pointer-events-none scale-125 flex flex-col justify-center gap-4 select-none"
           style={{ transform: "rotate(-8deg)", opacity: 0.85 }}
         >
-          {/* 1행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
             {rollingList.map((src, i) => (
               <div key={`r1-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -343,7 +335,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 2행: 우측 이동 (교차) */}
           <div className="row-move-right flex gap-4">
             {rollingList.slice().reverse().map((src, i) => (
               <div key={`r2-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -352,7 +343,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 3행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
             {rollingList.map((src, i) => (
               <div key={`r3-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -361,7 +351,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 4행: 우측 이동 (교차) */}
           <div className="row-move-right flex gap-4">
             {rollingList.slice().reverse().map((src, i) => (
               <div key={`r4-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -370,7 +359,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 5행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
             {rollingList.map((src, i) => (
               <div key={`r5-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -380,11 +368,9 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           </div>
         </div>
 
-        {/* 배경 반투명 오버레이 */}
         <div className="absolute inset-0 bg-background/45 backdrop-blur-[1px]" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50" />
 
-        {/* 중앙 카피 & 시작 바 */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-background/90 border border-primary/30 text-primary text-xs font-semibold mb-6 shadow-md backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
@@ -440,7 +426,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 🌟 2. [완성] OGQ 마켓 실시간 인기 스타일 참고 & 화풍 복사 섹션 */}
+      {/* 2. OGQ 마켓 실시간 인기 스타일 참고 & 화풍 복사 섹션 */}
       <section className="max-w-[1240px] mx-auto px-6 pt-12 pb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -467,7 +453,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           </button>
         </div>
 
-        {/* OGQ 카드 4종 그리드 (로딩 스켈레톤 포함) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {ogqLoading ? (
             [1, 2, 3, 4].map((n) => (
@@ -483,7 +468,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
                 key={item.id}
                 className="rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/60 hover:shadow-lg transition-all flex flex-col justify-between group"
               >
-                {/* 썸네일 영역 */}
                 <div className={`h-40 flex flex-col items-center justify-center relative p-3 border-b border-border overflow-hidden ${
                   item.thumbnailUrl ? "bg-muted/30" : `bg-gradient-to-br ${item.bgGradient || "from-amber-500/10 to-orange-500/20"}`
                 }`}>
@@ -492,152 +476,3 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
                       src={item.thumbnailUrl}
                       alt={item.title}
                       className="w-full h-full object-contain group-hover:scale-105 transition-transform"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="text-5xl select-none group-hover:scale-110 transition-transform">
-                      {item.emoji || "🎨"}
-                    </span>
-                  )}
-
-                  <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md text-[10px] font-bold border bg-emerald-500/10 text-emerald-600 border-emerald-500/20 backdrop-blur-xs">
-                    {item.ogqRank}
-                  </span>
-
-                  <span className="absolute bottom-2.5 left-2.5 text-[10px] text-muted-foreground bg-background/80 px-2 py-0.5 rounded backdrop-blur-xs font-medium">
-                    {item.tag}
-                  </span>
-                </div>
-
-                {/* 본문 설명 & 버튼 */}
-                <div className="p-4 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h4 className="font-bold text-base text-foreground mb-1 group-hover:text-primary transition-colors truncate">
-                      {item.title}
-                    </h4>
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-4">
-                      {item.description}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() => handleApplyOgqStyle(item.stylePrompt)}
-                    className="w-full py-2.5 rounded-xl border border-border bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground text-xs font-bold transition-all shadow-xs cursor-pointer text-center"
-                  >
-                    이 화풍으로 내 캐릭터 만들기 →
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {/* 3. 🔥 실시간 인기 이모티콘 갤러리 피드 (합의된 점수 공식 적용) */}
-      <section className="max-w-[1240px] mx-auto px-6 py-10 border-t border-border">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                🔥 실시간 주간 인기 갤러리
-              </h2>
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
-                최근 7일 랭킹
-              </span>
-            </div>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              좋아요(+1)와 이 스타일로 세트 생성(+3)이 가장 많은 실시간 인기 스티커입니다.
-            </p>
-          </div>
-
-          <div className="flex gap-1.5 p-1 rounded-xl bg-card border border-border self-start">
-            {["전체", "직장인", "동물", "치비소녀"].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  activeTab === tab
-                    ? "bg-primary text-primary-foreground font-semibold shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 갤러리 그리드 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {communitySets.map((item, idx) => (
-            <div 
-              key={item.id} 
-              className="rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all flex flex-col justify-between group relative"
-            >
-              {/* 순위 뱃지 (TOP 1 ~ 4) */}
-              <span className="absolute top-3 left-3 z-10 px-2 py-0.5 rounded-md bg-background/90 backdrop-blur-sm text-[11px] font-black text-foreground border border-border">
-                #{idx + 1}
-              </span>
-
-              {/* 좋아요 버튼 (+1점 반영) */}
-              <button 
-                onClick={(e) => handleLike(e, item.id)}
-                className="absolute top-3 right-3 z-10 px-2.5 py-1 rounded-full bg-background/90 backdrop-blur-sm text-[11px] font-semibold text-foreground border border-border hover:text-rose-500 hover:border-rose-300 transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                ❤️ {item.likesCount || 0}
-              </button>
-
-              {/* 썸네일 영역: 실제 이미지 URL이 있으면 이미지 출력, 없으면 기존 그라데이션+이모지 유지 */}
-              <div className={`h-44 flex items-center justify-center relative p-4 ${
-                item.thumbnailUrl ? "bg-muted/30" : `bg-gradient-to-br ${item.bgGradient || "from-emerald-500/10 to-teal-500/20"}`
-              }`}>
-                {item.thumbnailUrl ? (
-                  <img
-                    src={item.thumbnailUrl}
-                    alt={item.title}
-                    className="w-full h-full object-contain group-hover:scale-105 transition-transform"
-                    loading="lazy"
-                  />
-                ) : (
-                  <span className="text-7xl filter drop-shadow-md select-none group-hover:scale-110 transition-transform">
-                    {item.emoji || "✨"}
-                  </span>
-                )}
-
-                {item.tag && (
-                  <span className="absolute bottom-3 left-3 px-2 py-0.5 rounded-md bg-background/80 backdrop-blur-sm text-[10px] font-semibold text-foreground border border-border">
-                    {item.tag}
-                  </span>
-                )}
-
-                <span className="absolute bottom-3 right-3 text-[11px] text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-0.5 rounded">
-                  by {item.creator || item.creatorName || "익명"}
-                </span>
-              </div>
-
-              <div className="p-5 flex-1 flex flex-col justify-between">
-                <div>
-                  <h4 className="font-bold text-base text-foreground mb-1.5">{item.title}</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-4 leading-relaxed">
-                    "{item.prompt || item.description}"
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleSelectSet(item)}
-                  className="w-full py-2.5 rounded-xl border border-border bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground text-xs font-semibold transition-all shadow-sm cursor-pointer"
-                >
-                  이 스타일로 세트 생성하기 (+3점 기여)
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* 4. 푸터 (기존 디자인 100% 복구) */}
-      <footer className="border-t border-border bg-card/50 py-10 text-muted-foreground text-xs">
-        <div className="max-w-[1240px] mx-auto px-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-border">
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-bold text-sm text-
