@@ -1,56 +1,51 @@
+import type {
+  VercelRequest,
+  VercelResponse,
+} from "@vercel/node";
+
+import {
+  proxyOGQ,
+  querySuffix,
+} from "../server/ogqProxy.js";
+
 export const config = {
-  runtime: "edge",
+  api: {
+    bodyParser: false,
+  },
 };
 
-export default async function handler(req: Request) {
-  // CORS 사전 요청(OPTIONS) 처리
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
+  // CORS 헤더 설정
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      },
-    });
+    res.status(200).end();
+    return;
   }
 
   if (req.method !== "GET") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
+    res.setHeader("Allow", "GET");
+    res.status(405).json({
+      error: "Method not allowed",
     });
+    return;
   }
 
-  // Vercel 환경 변수 읽기
-  const apiKey = process.env.VITE_OGQ_API_KEY || process.env.OGQ_API_KEY;
+  const suffix = querySuffix(req, []);
 
-  try {
-    const ogqRes = await fetch("https://api.ogq.me/v1/market/stickers/popular?limit=4", {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
+  // OGQ 마켓 인기 스티커 API 경로 전달
+  const targetPath = `/v1/market/stickers/popular${suffix || "?limit=4"}`;
 
-    const data = await ogqRes.text();
+  console.log("[OGQ POPULAR PROXY]", { targetPath });
 
-    return new Response(data, {
-      status: ogqRes.status,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-      },
-    });
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
-  }
+  await proxyOGQ(
+    req,
+    res,
+    targetPath
+  );
 }
