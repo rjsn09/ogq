@@ -6,6 +6,10 @@
       "destination": "/api/canonical-proxy?path=:path*"
     },
     {
+      "source": "/api/ogq",
+      "destination": "/api/ogq.ts"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
