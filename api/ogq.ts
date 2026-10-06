@@ -1,25 +1,32 @@
-// api/ogq.ts
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+export const config = {
+  runtime: "edge",
+};
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS 헤더 설정
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  // Preflight OPTIONS 요청 즉시 응답
+export default async function handler(req: Request) {
+  // CORS 사전 요청(OPTIONS) 처리
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    });
   }
 
   if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
+  // Vercel 환경 변수 읽기
   const apiKey = process.env.VITE_OGQ_API_KEY || process.env.OGQ_API_KEY;
 
   try {
-    const response = await fetch("https://api.ogq.me/v1/market/stickers/popular?limit=4", {
+    const ogqRes = await fetch("https://api.ogq.me/v1/market/stickers/popular?limit=4", {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
@@ -27,15 +34,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: `OGQ API Error: ${response.statusText}`,
-      });
-    }
+    const data = await ogqRes.text();
 
-    const data = await response.json();
-    return res.status(200).json(data);
+    return new Response(data, {
+      status: ogqRes.status,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+      },
+    });
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
 }
