@@ -11,7 +11,7 @@ import {
   increment,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "../firebase/config";
+import { db } from "./firebase/config";
 
 const DC_CON_WALL = Array.from({ length: 24 }, (_, i) => `/img/${i + 1}.png`);
 
@@ -44,7 +44,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       title: "동글동글 크레용 낙서풍",
       ogqRank: "OGQ 인기 1위 스타일",
       tag: "#손그림 #크레용",
-      emoji: "🖍️️",
+      emoji: "🖍",
       bgGradient: "from-amber-500/10 to-orange-500/20",
       description: "삐뚤빼뚤 정감 가는 크레용 질감과 따스한 파스텔 톤앤매너",
       stylePrompt: "textured crayon lineart, rough hand-drawn aesthetic, soft warm pastel palette, minimal flat shading, cute doodle sticker",
