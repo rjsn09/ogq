@@ -346,7 +346,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           </div>
 
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2">
-            <div>© 2026 Emoticon Generator Studio. All rights reserved.</div>
+            <div>© 2026 Team BERT. All rights reserved.</div>
             <div>생성된 세트의 상업적 이용 권리는 라이선스 및 정책 규정에 따릅니다.</div>
           </div>
         </div>
