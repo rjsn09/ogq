@@ -59,9 +59,9 @@ export default function Header({
         >
           <div className="w-8 h-8 rounded-xl overflow-hidden shadow-sm shadow-primary/30">
             <img
-              src="/ogqIcon.png"
+              src="/moamoji.png"
               className="w-full h-full object-cover"
-              alt="OGQ"
+              alt="moamoji"
             />
           </div>
           <div className="flex items-baseline gap-2">
@@ -69,7 +69,7 @@ export default function Header({
               className="text-foreground"
               style={{ fontWeight: 700, fontSize: "1rem" }}
             >
-              OGQ마켓 기반 이모지 생성기
+              모아모지
             </span>
             <span className="text-muted-foreground text-xs hidden sm:inline">
               네이버 OGQ 마켓 · 24장 자동 생성
