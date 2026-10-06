@@ -134,7 +134,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
 
   const rollingList = [...DC_CON_WALL, ...DC_CON_WALL];
 
-  // 🌟 Vercel 프록시(/api/ogq)를 통한 실시간 화풍 데이터 조회 (CORS 해결)
+  // 🌟 검증된 프록시(/api/canonical/ogq-popular)를 통한 인기 스티커 조회
   useEffect(() => {
     let isMounted = true;
 
@@ -142,7 +142,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       setOgqLoading(true);
 
       try {
-        const res = await fetch("/api/ogq");
+        const res = await fetch("/api/canonical/ogq-popular?limit=4");
 
         if (!res.ok) throw new Error(`Proxy Error: ${res.status}`);
 
@@ -183,7 +183,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     };
   }, []);
 
-  // 1. 실시간 랭킹 쿼리 (Firestore popularityScore 정렬)
+  // Firestore 실시간 랭킹 구독
   useEffect(() => {
     setLoading(true);
 
@@ -247,7 +247,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     }
   }, [activeTab]);
 
-  // ❤️ 좋아요 클릭: +1점 반영
+  // 좋아요 클릭 (+1점)
   const handleLike = async (e: React.MouseEvent, setId: string) => {
     e.stopPropagation();
     try {
@@ -267,7 +267,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     }
   };
 
-  // 🚀 이 스타일로 세트 생성하기 클릭: +3점 반영 후 에디터 이동
+  // 세트 생성하기 클릭 (+3점)
   const handleSelectSet = async (item: any) => {
     try {
       const setRef = doc(db, "community_sets", item.id);
@@ -279,7 +279,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     onStart(item.prompt);
   };
 
-  // 🎨 OGQ 스타일을 에디터 프롬프트와 조합해 시작
+  // 화풍 복사 버튼 클릭
   const handleApplyOgqStyle = (stylePrompt: string) => {
     const finalPrompt = keyword.trim()
       ? `${keyword.trim()}, ${stylePrompt}`
@@ -417,7 +417,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 2. OGQ 마켓 실시간 인기 스타일 참고 & 화풍 복사 섹션 */}
+      {/* 2. OGQ 마켓 실시간 인기 스타일 참고 섹션 */}
       <section className="max-w-[1240px] mx-auto px-6 pt-12 pb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
