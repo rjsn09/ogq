@@ -460,7 +460,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-border">
             <div>
               <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-bold text-sm text-foreground">모아모지 (MoaMoji Studio)</span>
+                <span className="font-bold text-sm text-foreground">모아모지</span>
                 <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold">BETA</span>
               </div>
               <p className="text-muted-foreground">
@@ -484,7 +484,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           </div>
 
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2">
-            <div>© 2026 MoaMoji Studio. All rights reserved.</div>
+            <div>© 2026 Team BERT. All rights reserved.</div>
             <div>생성된 세트의 상업적 이용 권리는 라이선스 및 정책 규정에 따릅니다.</div>
           </div>
         </div>
