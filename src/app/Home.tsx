@@ -44,7 +44,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       title: "동글동글 크레용 낙서풍",
       ogqRank: "OGQ 인기 1위 스타일",
       tag: "#손그림 #크레용",
-      emoji: "🖍️",
+      emoji: "🖍️️",
       bgGradient: "from-amber-500/10 to-orange-500/20",
       description: "삐뚤빼뚤 정감 가는 크레용 질감과 따스한 파스텔 톤앤매너",
       stylePrompt: "textured crayon lineart, rough hand-drawn aesthetic, soft warm pastel palette, minimal flat shading, cute doodle sticker",
@@ -476,3 +476,178 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
                       src={item.thumbnailUrl}
                       alt={item.title}
                       className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="text-5xl select-none group-hover:scale-110 transition-transform">
+                      {item.emoji || "🎨"}
+                    </span>
+                  )}
+
+                  <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md text-[10px] font-bold border bg-emerald-500/10 text-emerald-600 border-emerald-500/20 backdrop-blur-xs">
+                    {item.ogqRank}
+                  </span>
+
+                  <span className="absolute bottom-2.5 left-2.5 text-[10px] text-muted-foreground bg-background/80 px-2 py-0.5 rounded backdrop-blur-xs font-medium">
+                    {item.tag}
+                  </span>
+                </div>
+
+                <div className="p-4 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-base text-foreground mb-1 group-hover:text-primary transition-colors truncate">
+                      {item.title}
+                    </h4>
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-4">
+                      {item.description}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => handleApplyOgqStyle(item.stylePrompt)}
+                    className="w-full py-2.5 rounded-xl border border-border bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground text-xs font-bold transition-all shadow-xs cursor-pointer text-center"
+                  >
+                    이 화풍으로 내 캐릭터 만들기 →
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      {/* 3. 실시간 인기 이모티콘 갤러리 피드 */}
+      <section className="max-w-[1240px] mx-auto px-6 py-10 border-t border-border">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                🔥 실시간 주간 인기 갤러리
+              </h2>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
+                최근 7일 랭킹
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              좋아요(+1)와 이 스타일로 세트 생성(+3)이 가장 많은 실시간 인기 스티커입니다.
+            </p>
+          </div>
+
+          <div className="flex gap-1.5 p-1 rounded-xl bg-card border border-border self-start">
+            {["전체", "직장인", "동물", "치비소녀"].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  activeTab === tab
+                    ? "bg-primary text-primary-foreground font-semibold shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {communitySets.map((item, idx) => (
+            <div 
+              key={item.id} 
+              className="rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all flex flex-col justify-between group relative"
+            >
+              <span className="absolute top-3 left-3 z-10 px-2 py-0.5 rounded-md bg-background/90 backdrop-blur-sm text-[11px] font-black text-foreground border border-border">
+                #{idx + 1}
+              </span>
+
+              <button 
+                onClick={(e) => handleLike(e, item.id)}
+                className="absolute top-3 right-3 z-10 px-2.5 py-1 rounded-full bg-background/90 backdrop-blur-sm text-[11px] font-semibold text-foreground border border-border hover:text-rose-500 hover:border-rose-300 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                ❤️ {item.likesCount || 0}
+              </button>
+
+              <div className={`h-44 flex items-center justify-center relative p-4 ${
+                item.thumbnailUrl ? "bg-muted/30" : `bg-gradient-to-br ${item.bgGradient || "from-emerald-500/10 to-teal-500/20"}`
+              }`}>
+                {item.thumbnailUrl ? (
+                  <img
+                    src={item.thumbnailUrl}
+                    alt={item.title}
+                    className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="text-7xl filter drop-shadow-md select-none group-hover:scale-110 transition-transform">
+                    {item.emoji || "✨"}
+                  </span>
+                )}
+
+                {item.tag && (
+                  <span className="absolute bottom-3 left-3 px-2 py-0.5 rounded-md bg-background/80 backdrop-blur-sm text-[10px] font-semibold text-foreground border border-border">
+                    {item.tag}
+                  </span>
+                )}
+
+                <span className="absolute bottom-3 right-3 text-[11px] text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-0.5 rounded">
+                  by {item.creator || item.creatorName || "익명"}
+                </span>
+              </div>
+
+              <div className="p-5 flex-1 flex flex-col justify-between">
+                <div>
+                  <h4 className="font-bold text-base text-foreground mb-1.5">{item.title}</h4>
+                  <p className="text-xs text-muted-foreground line-clamp-2 mb-4 leading-relaxed">
+                    "{item.prompt || item.description}"
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleSelectSet(item)}
+                  className="w-full py-2.5 rounded-xl border border-border bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground text-xs font-semibold transition-all shadow-sm cursor-pointer"
+                >
+                  이 스타일로 세트 생성하기 (+3점 기여)
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 4. 푸터 */}
+      <footer className="border-t border-border bg-card/50 py-10 text-muted-foreground text-xs">
+        <div className="max-w-[1240px] mx-auto px-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-border">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="font-bold text-sm text-foreground">모아모지</span>
+                <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-semibold">BETA</span>
+              </div>
+              <p className="text-muted-foreground">
+                누구나 클릭 한 번으로 나만의 캐릭터 이모티콘 세트를 완성하는 AI 크리에이티브 플랫폼
+              </p>
+            </div>
+
+            <div className="flex items-center gap-5 font-medium">
+              <button onClick={onOpenTerms} className="hover:text-foreground underline underline-offset-4 cursor-pointer">
+                이용약관
+              </button>
+              <span>·</span>
+              <button onClick={onOpenTerms} className="hover:text-foreground underline underline-offset-4 cursor-pointer">
+                개인정보처리방침
+              </button>
+              <span>·</span>
+              <a href="mailto:support@moamoji.com" className="hover:text-foreground underline underline-offset-4">
+                고객문의
+              </a>
+            </div>
+          </div>
+
+          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2">
+            <div>© 2026 Team BERT. All rights reserved.</div>
+            <div>생성된 세트의 상업적 이용 권리는 라이선스 및 정책 규정에 따릅니다.</div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
