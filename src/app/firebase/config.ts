@@ -6,18 +6,18 @@ import { getAuth } from "firebase/auth";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 
-const api_Key = import.meta.env.VITE_FIREBASE_API_KEY;
+const api_key = import.meta.env.VITE_FIREBASE_API_KEY;
 const firebase_domain = import.meta.env.VITE_FIREBASE_DOMAIN;
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: api_Key,
+  apiKey: api_key,
   authDomain: firebase_domain,
-  projectId: "emojigenerator-f3391",
-  storageBucket: "emojigenerator-f3391.firebasestorage.app",
-  messagingSenderId: "12218394188",
-  appId: "1:12218394188:web:8b06c590f3a812988e36e9",
-  measurementId: "G-FHQQJ0V60N"
+  projectId: "emojigenerator-c888e",
+  storageBucket: "emojigenerator-c888e.firebasestorage.app",
+  messagingSenderId: "918545241315",
+  appId: "1:918545241315:web:e90b10d5173ce49b89a1d6",
+  measurementId: "G-B13SGX5BCX"
 };
 
 // Initialize Firebase
