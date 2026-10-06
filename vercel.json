@@ -7,7 +7,7 @@
     },
     {
       "source": "/api/ogq",
-      "destination": "/api/ogq.ts"
+      "destination": "/api/ogq-proxy"
     },
     {
       "source": "/((?!api/).*)",
