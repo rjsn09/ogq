@@ -4,6 +4,14 @@
     {
       "source": "/api/canonical/:path*",
       "destination": "/api/canonical-proxy?path=:path*"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
