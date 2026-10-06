@@ -1,4 +1,3 @@
-// src/components/Header.tsx
 import React from "react";
 
 export function StepBadge({
@@ -84,15 +83,13 @@ export default function Header({
               <span className="text-xs text-muted-foreground font-mono hidden md:inline">
                 {userEmail}
               </span>
-              <span
-                className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs font-semibold"
-              >
+              <span className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground text-xs font-semibold">
                 Beta
               </span>
               {isAdmin && (
                 <button 
                   onClick={onDashboardClick} 
-                  className="px-3 py-1.5 rounded-xl border border-primary/40 text-xs text-primary hover:bg-muted transition-colors"
+                  className="px-3 py-1.5 rounded-xl border border-primary/40 text-xs text-primary hover:bg-muted transition-colors cursor-pointer"
                 >
                   대시보드
                 </button>
@@ -102,7 +99,7 @@ export default function Header({
           ) : (
             <button
               onClick={onLoginClick}
-              className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs hover:opacity-90 transition-opacity font-mono font-semibold"
+              className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs hover:opacity-90 transition-opacity font-mono font-semibold cursor-pointer"
             >
               로그인
             </button>
