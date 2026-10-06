@@ -96,6 +96,7 @@ export default function App() {
           agreedAt: serverTimestamp(),
           allowAiTraining,
           userEmail: user.email || "",
+          is_admin: false
         },
         { merge: true }
       );
