@@ -18,7 +18,7 @@ const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
 export default function App() {
   const [currentView, setCurrentView] = useState<"home" | "editor" | "dashboard">("home");
 
-  // 인증 및 권한
+  // 인증 및 권한 상태
   const [user, setUser] = useState<any>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
@@ -29,7 +29,7 @@ export default function App() {
   const [initialDescription, setInitialDescription] = useState("");
   const [initialTitle, setInitialTitle] = useState("");
 
-  // 보관함 & 설정 모달
+  // 보관함 & 설정 모달 상태
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autoSave, setAutoSave] = useState(true);
@@ -82,7 +82,9 @@ export default function App() {
     setAutoSave(enabled);
     try {
       localStorage.setItem(`ogq:autoSave:${user?.uid ?? ""}`, String(enabled));
-    } catch { /* session fallback */ }
+    } catch {
+      /* session fallback */
+    }
   };
 
   const handleTermsConfirm = async (allowAiTraining: boolean) => {
@@ -121,7 +123,9 @@ export default function App() {
       <Header
         userEmail={user ? user.email ?? "내 계정" : null}
         isAdmin={isAdmin}
-        onDashboardClick={() => { if (isAdmin) setCurrentView("dashboard"); }}
+        onDashboardClick={() => {
+          if (isAdmin) setCurrentView("dashboard");
+        }}
         onLoginClick={() => setIsLoginModalOpen(true)}
         onLogoClick={() => setCurrentView("home")}
         profileMenu={
@@ -157,7 +161,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 뷰 전환 */}
+      {/* 뷰 렌더링 라우터 */}
       {currentView === "dashboard" && isAdmin && user ? (
         <Suspense fallback={<p className="p-8" role="status">대시보드 불러오는 중…</p>}>
           <AdminDashboard uid={user.uid} onBack={() => setCurrentView("home")} />
@@ -178,7 +182,7 @@ export default function App() {
         />
       )}
 
-      {/* 보관함 & 설정 다이얼로그 */}
+      {/* 보관함 & 환경설정 다이얼로그 */}
       <ProductLibraryDialog
         open={libraryOpen && !!user}
         onOpenChange={setLibraryOpen}
@@ -203,17 +207,17 @@ export default function App() {
         onAutoSaveChange={changeAutoSave}
       />
 
-      {/* 로그인 모달 */}
+      {/* 🌟 로그인 모달 (2중 박스 테두리 제거 버전) */}
       {isLoginModalOpen && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setIsLoginModalOpen(false)}
         >
-          <div className="relative bg-card rounded-2xl shadow-xl overflow-hidden max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               onClick={() => setIsLoginModalOpen(false)}
-              className="absolute top-4 right-4 z-10 text-muted-foreground hover:text-foreground text-sm cursor-pointer"
+              className="absolute top-3 right-3 z-30 text-zinc-400 hover:text-zinc-600 text-sm cursor-pointer p-1"
             >
               ✕
             </button>

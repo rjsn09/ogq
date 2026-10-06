@@ -57,11 +57,11 @@ export default function Header({
           className="flex items-center gap-3 cursor-pointer"
           onClick={onLogoClick}
         >
-          <div className="w-8 h-8 rounded-xl overflow-hidden shadow-sm shadow-primary/30">
+          <div className="w-8 h-8 flex items-center justify-center">
             <img
-              src="/ogqIcon.png"
-              className="w-full h-full object-cover"
-              alt="OGQ"
+              src="/moamoji.png"
+              className="w-full h-full object-contain drop-shadow-sm"
+              alt="moamoji"
             />
           </div>
           <div className="flex items-baseline gap-2">
@@ -69,10 +69,10 @@ export default function Header({
               className="text-foreground"
               style={{ fontWeight: 700, fontSize: "1rem" }}
             >
-              OGQ마켓 기반 이모지 생성기
+              모아모지
             </span>
             <span className="text-muted-foreground text-xs hidden sm:inline">
-              네이버 OGQ 마켓 · 24장 자동 생성
+              네이버 OGQ 마켓연계 · 이모지 세트 생성
             </span>
           </div>
         </div>

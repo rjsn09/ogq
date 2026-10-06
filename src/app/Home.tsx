@@ -5,14 +5,11 @@ interface HomeProps {
   onOpenTerms?: () => void;
 }
 
-// public/img 폴더에 업로드된 1.png ~ 24.png 파일 직접 매핑
 const DC_CON_WALL = Array.from({ length: 24 }, (_, i) => `/img/${i + 1}.png`);
 
 export default function Home({ onStart, onOpenTerms }: HomeProps) {
   const [keyword, setKeyword] = useState("");
   const [activeTab, setActiveTab] = useState("전체");
-
-  // 설명(desc) 텍스트만 프롬프트로 그대로 전달되도록 매핑
   const presets = [
     { 
       title: "필수 감정 세트", 
@@ -82,7 +79,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
     },
   ];
 
-  // 무한 롤링 트랙에 빈틈이 없도록 2벌 연결
   const rollingList = [...DC_CON_WALL, ...DC_CON_WALL];
 
   return (
@@ -110,13 +106,11 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         }
       `}</style>
 
-      {/* 1. 디시콘 대각선 교차 롤링 히어로 섹션 */}
       <section className="relative min-h-[700px] flex items-center justify-center overflow-hidden">
         <div 
           className="absolute inset-0 pointer-events-none scale-125 flex flex-col justify-center gap-4 select-none"
           style={{ transform: "rotate(-8deg)", opacity: 0.85 }}
         >
-          {/* 1행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
             {rollingList.map((src, i) => (
               <div key={`r1-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -125,7 +119,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 2행: 우측 이동 (교차) */}
           <div className="row-move-right flex gap-4">
             {rollingList.slice().reverse().map((src, i) => (
               <div key={`r2-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -134,7 +127,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 3행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
             {rollingList.map((src, i) => (
               <div key={`r3-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -143,7 +135,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 4행: 우측 이동 (교차) */}
           <div className="row-move-right flex gap-4">
             {rollingList.slice().reverse().map((src, i) => (
               <div key={`r4-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -152,7 +143,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
             ))}
           </div>
 
-          {/* 5행: 좌측 이동 */}
           <div className="row-move-left flex gap-4">
             {rollingList.map((src, i) => (
               <div key={`r5-${i}`} className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-card border-2 border-border shadow-md overflow-hidden flex-shrink-0">
@@ -162,11 +152,9 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           </div>
         </div>
 
-        {/* 배경 반투명 오버레이 */}
         <div className="absolute inset-0 bg-background/45 backdrop-blur-[1px]" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/50" />
 
-        {/* 중앙 카피 & 시작 바 */}
         <div className="relative z-10 max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-background/90 border border-primary/30 text-primary text-xs font-semibold mb-6 shadow-md backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
@@ -222,7 +210,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 2. 템플릿 카드 (클릭 시 desc 내용만 전달) */}
       <section className="max-w-[1240px] mx-auto px-6 pt-6 pb-14">
         <div className="mb-8">
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-1">상황별 인기 세트 모아보기</h2>
@@ -254,7 +241,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 3. 갤러리 피드 */}
       <section className="max-w-[1240px] mx-auto px-6 py-12 border-t border-border">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
@@ -316,7 +302,6 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
         </div>
       </section>
 
-      {/* 4. 푸터 */}
       <footer className="border-t border-border bg-card/50 py-10 text-muted-foreground text-xs">
         <div className="max-w-[1240px] mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 pb-6 border-b border-border">
@@ -346,7 +331,7 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
           </div>
 
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2">
-            <div>© 2026 Emoticon Generator Studio. All rights reserved.</div>
+            <div>© 2026 Team BERT. All rights reserved.</div>
             <div>생성된 세트의 상업적 이용 권리는 라이선스 및 정책 규정에 따릅니다.</div>
           </div>
         </div>
