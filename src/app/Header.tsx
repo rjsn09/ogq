@@ -69,7 +69,7 @@ export default function Header({
               className="text-foreground"
               style={{ fontWeight: 700, fontSize: "1rem" }}
             >
-              모아모지 (MoaMoji)
+              OGQ마켓 기반 이모지 생성기
             </span>
             <span className="text-muted-foreground text-xs hidden sm:inline">
               네이버 OGQ 마켓 · 24장 자동 생성
