@@ -61,34 +61,34 @@ export default function ProductLibraryDialog({
             상품 불러오기
           </DialogTitle>
           <DialogDescription className="mt-2">
-            오른쪽에서 상품을 선택한 뒤, 불러오기 버튼을 누르면 저장된 이미지와 편집 정보를 가져옵니다.
+            오른쪽에서 상품을 선택하면 전체 이모티콘을 미리 볼 수 있습니다. “이 상품 불러오기”를 눌러야 편집 화면에 적용됩니다.
           </DialogDescription>
         </div>
 
         <div className="grid max-h-[75vh] min-h-[440px] overflow-y-auto md:grid-cols-[minmax(0,1fr)_280px]">
-          <section aria-label="선택한 상품" className="min-w-0 p-5 md:p-6">
+          <section aria-label="선택한 상품 미리보기" className="min-w-0 p-5 md:p-6">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="font-semibold truncate">
-                  {selected?.data.title ?? selectedSummary?.title ?? '상품 선택'}
+                  {selected?.data.title ?? '상품 미리보기'}
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {selected
-                    ? `${selected.data.images.filter(Boolean).length}/24장 · 제목, 태그와 프롬프트도 함께 복원됩니다.`
-                    : selectedSummary
-                      ? `${selectedSummary.imageCount}/24장 · 불러오기 버튼을 누르면 실제 저장 데이터를 다운로드합니다.`
-                      : '오른쪽 목록에서 불러올 상품을 선택해 주세요.'}
+                    ? `${selected.data.images.filter(Boolean).length}/24장 · 제목, 태그와 프롬프트도 함께 불러옵니다.`
+                    : previewLoading
+                      ? '선택한 상품의 이미지를 불러오는 중입니다.'
+                      : '오른쪽에서 상품을 선택하면 전체 이모티콘을 미리 볼 수 있습니다.'}
                 </p>
               </div>
 
               <button
                 type="button"
-                disabled={!selectedId || previewLoading}
-                onClick={() => void onLoad()}
+                disabled={!selectedSummary || previewLoading}
+                onClick={onLoad}
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Check size={16} />
-                {previewLoading ? '불러오는 중…' : '이 상품 불러오기'}
+                이 상품 불러오기
               </button>
             </div>
 
@@ -104,7 +104,7 @@ export default function ProductLibraryDialog({
                 className="flex min-h-80 items-center justify-center gap-3 text-sm text-muted-foreground"
               >
                 <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                상품 이미지와 편집 정보 불러오는 중…
+                상품 이미지 불러오는 중…
               </div>
             ) : selected ? (
               <div
@@ -131,29 +131,6 @@ export default function ProductLibraryDialog({
                   </div>
                 ))}
               </div>
-            ) : selectedSummary ? (
-              <div className="flex min-h-80 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border bg-muted/20 text-center">
-                <span className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-muted">
-                  {selectedSummary.coverImage ? (
-                    <img
-                      src={selectedSummary.coverImage}
-                      alt=""
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <ImageIcon size={34} className="text-muted-foreground/40" />
-                  )}
-                </span>
-                <div>
-                  <p className="font-semibold">{selectedSummary.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {selectedSummary.imageCount}/24장 · {dateFormatter.format(selectedSummary.updatedAt)}
-                  </p>
-                </div>
-                <p className="max-w-sm text-xs text-muted-foreground">
-                  아직 Supabase 파일은 다운로드하지 않았습니다. 위의 “이 상품 불러오기” 버튼을 누르면 에디터에 적용됩니다.
-                </p>
-              </div>
             ) : (
               <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-muted/20 text-center">
                 <ImageIcon size={36} className="text-muted-foreground/40" />
@@ -161,11 +138,8 @@ export default function ProductLibraryDialog({
                   {loading
                     ? '저장한 상품을 찾고 있습니다.'
                     : products.length
-                      ? '오른쪽에서 불러올 상품을 선택해 주세요.'
+                      ? '오른쪽에서 미리 볼 상품을 선택해 주세요.'
                       : '아직 저장한 상품이 없습니다.'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  생성을 완료하면 자동 저장되며, 프로필 메뉴에서도 저장할 수 있습니다.
                 </p>
               </div>
             )}

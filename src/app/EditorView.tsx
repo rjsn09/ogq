@@ -100,7 +100,7 @@ export default function EditorView({
   const restoringProduct = useRef(false);
 
   useEffect(() => {
-    const selected = productLibrary.selected;
+    const selected = productLibrary.loaded;
     if (!selected?.data) return;
 
     const data = selected.data;

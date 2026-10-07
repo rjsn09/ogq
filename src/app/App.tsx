@@ -201,9 +201,10 @@ export default function App() {
         loading={productLibrary.loading}
         previewLoading={productLibrary.previewLoading}
         error={productLibrary.error}
-        onSelect={summary => productLibrary.select(summary)}
+        onSelect={(summary) => void productLibrary.select(summary)}
         onLoad={async () => {
           const ok = await productLibrary.loadSelected();
+
           if (!ok) return;
 
           setLibraryOpen(false);
