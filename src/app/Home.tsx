@@ -903,4 +903,4 @@ export default function Home({ onStart, onOpenTerms }: HomeProps) {
       </footer>
     </div>
   );
-}
+}s
