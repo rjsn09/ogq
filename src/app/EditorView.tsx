@@ -86,31 +86,6 @@ export default function EditorView({
   const [canonicalError, setCanonicalError] = useState<string | null>(null);
   const [canonicalBusy, setCanonicalBusy] = useState(false);
 
-  useEffect(() => {
-    const selected = productLibrary.selected;
-    if (!selected?.data) return;
-
-    const data = selected.data;
-
-    setTitle(data.title ?? "");
-    setTags(data.tags ?? []);
-    setDescription(data.description ?? "");
-    setCategory(data.category ?? "캐릭터");
-    setUploadedImage(data.uploadedImage ?? null);
-    setCanonicalImage(data.canonicalImage ?? null);
-    setGeneratedImages(data.images ?? []);
-
-    if (data.slotVariants) {
-      setSlotVariants(data.slotVariants);
-    }
-
-    if (data.slotPrompts) {
-      setSlotPrompts(data.slotPrompts);
-    }
-
-    productLibrary.markLoaded(selected.summary);
-  }, [productLibrary.selected]);
-
   const generationTask = useGenerationTask();
   const generationController = useRef<AbortController | null>(null);
   useEffect(() => () => generationController.current?.abort(), []);
@@ -121,6 +96,67 @@ export default function EditorView({
   const [referenceReady, setReferenceReady] = useState(false);
   const referenceVersion = useRef(0);
   const previousReferenceInputs = useRef({ source: uploadedImage, description });
+
+  const restoringProduct = useRef(false);
+
+  useEffect(() => {
+    const selected = productLibrary.selected;
+    if (!selected?.data) return;
+
+    const data = selected.data;
+    restoringProduct.current = true;
+    referenceVersion.current++;
+    generationController.current?.abort();
+    approvedReference.current = null;
+    referenceProfile.current = {};
+
+    setTitle(data.title ?? "");
+    setTags(data.tags ?? []);
+    setDescription(data.description ?? "");
+    setCategory(data.category ?? "캐릭터");
+    setUploadedImage(data.uploadedImage ?? null);
+    setCanonicalImage(data.canonicalImage ?? null);
+    setGeneratedImages(data.images ?? []);
+    setProgress(0);
+    setGeneratingIndices(new Set());
+    setCanonicalPanelOpen(false);
+    setCanonicalError(null);
+    setCanonicalBusy(false);
+
+    if (data.slotVariants) setSlotVariants(data.slotVariants);
+    if (data.slotPrompts) setSlotPrompts(data.slotPrompts);
+
+    if (data.canonicalImage && data.uploadedImage) {
+      const restoredReference: ApprovedReference = {
+        source: data.uploadedImage,
+        description: (data.description ?? "").trim(),
+        image: data.canonicalImage,
+        id: null,
+      };
+
+      approvedReference.current = restoredReference;
+      setCanonicalId(null);
+      setApprovedCanonicalId("restored-reference");
+      setCanonicalStatus("approved");
+      setReferenceReady(true);
+
+      previousReferenceInputs.current = {
+        source: data.uploadedImage,
+        description: data.description ?? "",
+      };
+
+      if (user?.uid) {
+        void referenceStorage(user.uid, "write", restoredReference).catch(() => {});
+      }
+    } else {
+      setCanonicalId(null);
+      setApprovedCanonicalId(null);
+      setCanonicalStatus("generating");
+      setReferenceReady(true);
+    }
+
+    productLibrary.markLoaded(selected.summary);
+  }, [productLibrary.selected, productLibrary.markLoaded, user?.uid]);
 
   const currentDraft = useCallback((): ProductDraft => ({
     title, tags, description, category, uploadedImage, canonicalImage,
@@ -144,14 +180,28 @@ export default function EditorView({
   }, [user?.uid]);
 
   useEffect(() => {
+    if (restoringProduct.current) {
+      restoringProduct.current = false;
+      previousReferenceInputs.current = { source: uploadedImage, description };
+      return;
+    }
+
     const previous = previousReferenceInputs.current;
     previousReferenceInputs.current = { source: uploadedImage, description };
-    if ((previous.source !== uploadedImage || previous.description.trim() !== description.trim()) && !referenceMatches(approvedReference.current, uploadedImage, description)) {
+    if (
+      (previous.source !== uploadedImage || previous.description.trim() !== description.trim()) &&
+      !referenceMatches(approvedReference.current, uploadedImage, description)
+    ) {
       invalidateCanonical();
     }
   }, [description, uploadedImage, invalidateCanonical]);
 
   useEffect(() => {
+    if (productLibrary.selected?.data) {
+      setReferenceReady(true);
+      return;
+    }
+
     const version = ++referenceVersion.current;
     approvedReference.current = null;
     setCanonicalId(null);
@@ -172,7 +222,7 @@ export default function EditorView({
       setCanonicalStatus('approved');
     }).catch(() => {}).finally(() => { if (active) setReferenceReady(true); });
     return () => { active = false; generationController.current?.abort(); };
-  }, [user?.uid]);
+  }, [user?.uid, productLibrary.selected]);
 
   const handleVariantChange = useCallback((slotIndex: number, variantId: string) => {
     const variant = VARIANT_CATALOG.find((v) => v.id === variantId);

@@ -37,31 +37,36 @@ export default function App() {
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+
+    const unsubscribe = onAuthStateChanged(auth, currentUser => {
       unsubscribeProfile?.();
       setUser(currentUser);
       setIsAdmin(false);
       setHasAgreedTerms(false);
-      setCurrentView((view) => (view === "dashboard" ? "home" : view));
+      setCurrentView(view => (view === "dashboard" ? "home" : view));
+
       if (!currentUser) return;
+
       setIsLoginModalOpen(false);
       void recordVisit(currentUser.uid);
+
       unsubscribeProfile = onSnapshot(
         doc(db, "users", currentUser.uid),
-        (snapshot) => {
+        snapshot => {
           const profile = snapshot.data();
           const admin = profile?.isAdmin === true;
           setIsAdmin(admin);
           setHasAgreedTerms(profile?.termsAgreed === true);
-          if (!admin) setCurrentView((view) => (view === "dashboard" ? "home" : view));
+          if (!admin) setCurrentView(view => (view === "dashboard" ? "home" : view));
         },
-        (error) => {
+        error => {
           console.error("Firestore 사용자 정보 확인 실패:", error);
           setIsAdmin(false);
           setHasAgreedTerms(false);
         }
       );
     });
+
     return () => {
       unsubscribe();
       unsubscribeProfile?.();
@@ -71,6 +76,7 @@ export default function App() {
   useEffect(() => {
     setLibraryOpen(false);
     setSettingsOpen(false);
+
     try {
       setAutoSave(localStorage.getItem(`ogq:autoSave:${user?.uid ?? ""}`) !== "false");
     } catch {
@@ -80,6 +86,7 @@ export default function App() {
 
   const changeAutoSave = (enabled: boolean) => {
     setAutoSave(enabled);
+
     try {
       localStorage.setItem(`ogq:autoSave:${user?.uid ?? ""}`, String(enabled));
     } catch {
@@ -89,6 +96,7 @@ export default function App() {
 
   const handleTermsConfirm = async (allowAiTraining: boolean) => {
     if (!user?.uid) return;
+
     try {
       await setDoc(
         doc(db, "users", user.uid),
@@ -98,10 +106,11 @@ export default function App() {
           agreedAt: serverTimestamp(),
           allowAiTraining,
           userEmail: user.email || "",
-          is_admin: false
+          is_admin: false,
         },
         { merge: true }
       );
+
       setHasAgreedTerms(true);
       setIsTermsModalOpen(false);
     } catch (err) {
@@ -115,6 +124,7 @@ export default function App() {
       setInitialDescription(presetText);
       setInitialTitle(presetText.slice(0, 15));
     }
+
     setCurrentView("editor");
   };
 
@@ -161,7 +171,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 뷰 렌더링 라우터 */}
       {currentView === "dashboard" && isAdmin && user ? (
         <Suspense fallback={<p className="p-8" role="status">대시보드 불러오는 중…</p>}>
           <AdminDashboard uid={user.uid} onBack={() => setCurrentView("home")} />
@@ -182,18 +191,21 @@ export default function App() {
         />
       )}
 
-      {/* 보관함 & 환경설정 다이얼로그 */}
       <ProductLibraryDialog
         open={libraryOpen && !!user}
         onOpenChange={setLibraryOpen}
         products={productLibrary.products}
         selected={productLibrary.selected}
+        selectedSummary={productLibrary.selectedSummary}
         selectedId={productLibrary.selectedId}
         loading={productLibrary.loading}
         previewLoading={productLibrary.previewLoading}
         error={productLibrary.error}
-        onSelect={(summary) => void productLibrary.select(summary)}
-        onLoad={() => {
+        onSelect={summary => productLibrary.select(summary)}
+        onLoad={async () => {
+          const ok = await productLibrary.loadSelected();
+          if (!ok) return;
+
           setLibraryOpen(false);
           setCurrentView("editor");
         }}
@@ -207,13 +219,12 @@ export default function App() {
         onAutoSaveChange={changeAutoSave}
       />
 
-      {/* 🌟 로그인 모달 (2중 박스 테두리 제거 버전) */}
       {isLoginModalOpen && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setIsLoginModalOpen(false)}
         >
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div className="relative" onClick={e => e.stopPropagation()}>
             <button
               type="button"
               onClick={() => setIsLoginModalOpen(false)}
