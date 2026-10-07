@@ -86,6 +86,31 @@ export default function EditorView({
   const [canonicalError, setCanonicalError] = useState<string | null>(null);
   const [canonicalBusy, setCanonicalBusy] = useState(false);
 
+  useEffect(() => {
+    const selected = productLibrary.selected;
+    if (!selected?.data) return;
+
+    const data = selected.data;
+
+    setTitle(data.title ?? "");
+    setTags(data.tags ?? []);
+    setDescription(data.description ?? "");
+    setCategory(data.category ?? "캐릭터");
+    setUploadedImage(data.uploadedImage ?? null);
+    setCanonicalImage(data.canonicalImage ?? null);
+    setGeneratedImages(data.images ?? []);
+
+    if (data.slotVariants) {
+      setSlotVariants(data.slotVariants);
+    }
+
+    if (data.slotPrompts) {
+      setSlotPrompts(data.slotPrompts);
+    }
+
+    productLibrary.markLoaded(selected.summary);
+  }, [productLibrary.selected]);
+
   const generationTask = useGenerationTask();
   const generationController = useRef<AbortController | null>(null);
   useEffect(() => () => generationController.current?.abort(), []);

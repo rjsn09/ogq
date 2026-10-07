@@ -107,6 +107,62 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 canonical_api_service = install_canonical_api(app=app, get_generator=lambda: generator, generation_lock=generation_lock, variant_prompt_map=VARIANT_PROMPT_MAP, default_order=DEFAULT_ORDER)
+
+@app.get("/v1/market/stickers/popular")
+def get_popular_stickers(limit: int = 4):
+    limit = max(1, min(limit, 20))
+
+    items = [
+        {
+            "id": "ogq-crayon",
+            "title": "동글동글 크레용 낙서풍",
+            "tags": ["손그림", "크레용"],
+            "description": "따뜻한 파스텔 컬러와 손으로 그린 듯한 크레용 질감",
+            "stylePrompt": (
+                "textured crayon lineart, rough hand-drawn aesthetic, "
+                "soft warm pastel palette, minimal flat shading, "
+                "cute doodle sticker"
+            ),
+        },
+        {
+            "id": "ogq-bold-chibi",
+            "title": "선명한 굵은선 치비 캐릭터",
+            "tags": ["굵은선", "치비"],
+            "description": "굵은 외곽선과 선명한 컬러의 치비 스타일",
+            "stylePrompt": (
+                "bold clean black outline, 2-head chibi proportion, "
+                "vibrant flat colors, crisp vector sticker, "
+                "white stroke border"
+            ),
+        },
+        {
+            "id": "ogq-watercolor",
+            "title": "투명한 수채화 감성 파스텔",
+            "tags": ["수채화", "파스텔"],
+            "description": "은은한 물감 번짐과 부드러운 파스텔 색감",
+            "stylePrompt": (
+                "soft watercolor wash, light paper texture, "
+                "gentle pastel tone, airy dreamy vibe, "
+                "subtle gradient blending, elegant sticker"
+            ),
+        },
+        {
+            "id": "ogq-retro-pixel",
+            "title": "도트 픽셀 레트로 게임풍",
+            "tags": ["픽셀아트", "Y2K"],
+            "description": "16비트 레트로 게임 느낌의 귀여운 픽셀 스타일",
+            "stylePrompt": (
+                "16-bit cute pixel art, nostalgic game asset, "
+                "vibrant retro palette, pixel perfect outline, "
+                "playful arcade sticker"
+            ),
+        },
+    ]
+
+    return {
+        "items": items[:limit]
+    }
+
 def print_routes(router, depth=0):
     indent = "  " * depth
 
